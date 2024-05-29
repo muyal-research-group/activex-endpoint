@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "activexmiddleware"
+version = "0.1.0"
+description = ""
+authors = ["Ignacio Castillo <ignacio.bcastillo@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+mictlanx = "0.0.141"
+pyzmq = "^26.0.3"
+activex = "^0.0.4"
+cloudpickle = "^3.0.0"
+
+
+
+
+[tool.poetry.group.dev.dependencies]
+pandas = "1.4.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "test"
+url = "https://test.pypi.org/simple/"
+priority = "supplemental"

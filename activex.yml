@@ -1,0 +1,33 @@
+services:
+    activex-middleware-0:
+        image: nachocode/activex:middleware
+        container_name: activex-middleware-0
+        ports:
+                - 16666:16666
+                - 16667:16667
+        environment:
+                - ACTIVEX_PROTOCOL=tcp
+                - ACTIVEX_PUB_SUB_PORT=16666
+                - ACTIVEX_REQ_REP_PORT=16667
+                - ACTIVEX_HOSTNAME=0.0.0.0
+                - MICTLANX_CLIENT_ID=activex-mictlanx-0
+                - MICTLANX_BUCKET_ID=activex
+                - MICTLANX_DEBUG=0
+                - MICTLANX_LOG_INTERVAL=24
+                - MICTLANX_LOG_WHEN=h
+                - MICTLANX_LOG_OUTPUT_PATH=/log
+                - MICTLANX_MAX_WORKERS=4
+                - MICTLANX_ROUTERS=mictlanx-router-0:mictlanx-router-0:60666
+        volumes:
+                - activexmiddleware_log:/log
+        networks:
+                - mictlanx
+volumes:
+    activexmiddleware_log:
+networks:
+    mictlanx:
+       external: true
+   
+
+
+    
