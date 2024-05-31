@@ -1,7 +1,8 @@
 import zmq.asyncio 
+import string
+import activexendpoint.utils as U
 import time as T
 import os 
-# from typing import Callable
 import cloudpickle as CP
 import json as J
 from typing import List,Tuple,Dict,Any,Callable
@@ -33,6 +34,11 @@ SUCCESS_STATUS     = SUCCESS_STATUS_INT.to_bytes(byteorder="little",length=numbe
 
 class Dummy:
     def __init__(self, *args, **kwargs):
+        logger.debug({
+            "event":"DUMMY",
+            "args":args,
+            "kwargs":kwargs
+        })
         self.__dict__['attributes'] = {}
         self.__dict__['methods'] = {}
 
@@ -109,22 +115,7 @@ def add_dummy_module(module_path, class_name, dummy_class):
         "modules":len(sys.modules)
     })
 
-# def add_dummy_module(module_name, class_name, dummy_class):
-#     # Create a dummy module
-#     dummy_module = types.ModuleType(module_name)
-#     # Add the dummy class to the module
-#     setattr(dummy_module, class_name, dummy_class)
-#     # Insert the dummy module into sys.modules
-#     sys.modules[module_name] = dummy_module
-#     logger.debug({
-#         "event":"ADD_MODULE",
-#         "module":module_name,
-#         "name":class_name,
-#         "class":dummy_class
-#     })
 
-# Example usage: Add a dummy module named 'dummy.module' with DummyClass
-# add_dummy_module('dummy.module', 'DummyClass', DummyClass)
 
 sys.path.append(CODE_REPOSITORY_PATH)
 
@@ -221,6 +212,12 @@ class Task(object):
         self. f = f 
         self.fargs = fargs
         self.fkwargs= fkwargs
+    
+    def get_bucket_id(self)->str:
+        return self.fkwargs.get("bucket_id", "activex")
+
+    def get_output_key(self)->str:
+        return self.fkwargs.get("output_key", nanoid(alphabet=string.ascii_lowercase+string.digits))
 
 
 def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
@@ -286,6 +283,12 @@ async def put_metadata(topic:str,operation:str, metadata:Dict[str,Any])->Result[
 async def method_execution(_msg:Task)->Result[Any, Exception]:
     start_time = T.time()
     key        = _msg.metadata.get("key",-1)
+    bucket_id  = _msg.get_bucket_id()
+    logger.debug({
+        "event":"OBJECT.IDS.SHOW",
+        "bucket_id":bucket_id,
+        "key":key
+    })
     if key == -1:
         error_msg = "Key not found in metadata"
         logger.error({
@@ -300,6 +303,7 @@ async def method_execution(_msg:Task)->Result[Any, Exception]:
     if maybe_mictlanx_metadata.is_none:
         logger.warning({
             "event":"NOT.FOUND",
+            "bucket_id":bucket_id,
             "key":key,
         })
         get_metadata_start_time = T.time()
@@ -309,6 +313,7 @@ async def method_execution(_msg:Task)->Result[Any, Exception]:
             error_msg = "{} not found".format(key)
             logger.error({
                 "error":error_msg,
+                "bucket_id":bucket_id,
                 "key":key
             })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
@@ -317,6 +322,7 @@ async def method_execution(_msg:Task)->Result[Any, Exception]:
         remote_metadata = get_metadata_result.unwrap()
         logger.info({
             "event":"GET.REMOTE.METADATA",
+            "bucket_id":bucket_id,
             "key":key,
             "response_time":T.time() - get_metadata_start_time
         })
@@ -333,6 +339,7 @@ async def method_execution(_msg:Task)->Result[Any, Exception]:
         error_msg = "module or name attribute not found in tags"
         logger.error({
             "msg":error_msg,
+            "bucket_id":bucket_id,
             "key":key,
             "operation":"METHOD.EXEC"
         })
@@ -340,35 +347,61 @@ async def method_execution(_msg:Task)->Result[Any, Exception]:
         return Err(Exception(error_msg))
         # continue
     
-    obj_result_get_response :Result[GetBytesResponse,Exception]= mictlanx_client.get(bucket_id=BUCKET_ID, key=key).result()
+    obj_result_get_response :Result[GetBytesResponse,Exception]= mictlanx_client.get_with_retry(
+        bucket_id=bucket_id,
+        key=key
+    )
 
     
     if obj_result_get_response.is_err:
         error_msg = "get_to_file failed"
         logger.error({
             "msg":error_msg, 
+            "bucket_id":bucket_id,
             "key":key
         })
         await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
         return Err(Exception(error_msg))
     logger.debug({
         "event":"GET.REMOTE",
-        "bucket_id":BUCKET_ID,
+        "bucket_id":bucket_id,
         "key":key
     })
     get_obj_response = obj_result_get_response.unwrap()
     obj_bytes        = get_obj_response.value
     obj              = CP.loads(obj_bytes)
     
-    # f                = CP.loads(fbytes)
-    print("FARGS", _msg.fargs)
-    print("FKWARGS", _msg.fkwargs)
+    logger.debug({
+        "event":"SHOW.ARGS.KWARGS",
+        "bucket_id":bucket_id,
+        "key":key,
+        "args":_msg.fargs,
+        "kwargs":_msg.fkwargs,
+    })
+    # ___________________________________________________
     res              = _msg.f(obj,*_msg.fargs, **_msg.fkwargs)
     # ___________________________________________________
     result_bytes = CP.dumps(res)
+    result_key   = _msg.get_output_key()
+    put_result   = mictlanx_client.put_chunked(
+        chunks=U.byte_generator(result_bytes),
+        bucket_id=bucket_id,
+        key=result_key,
+        tags={
+            "parent_object_id":key,
+        }
+    )
+    print("PUT+RESULT",put_result)
+    if put_result.is_err:
+        logger.error({
+            "event":"PUT.CHUNKED.FAILED",
+            "bucket_id":bucket_id,
+            "key":result_key,
+        })
     
     logger.info({
         "event":"METHOD.EXEC.COMPLETED",
+        "bucket_id":bucket_id,
         "key":key,
         "fresult_size":len(result_bytes),
         "response_time": T.time()- start_time

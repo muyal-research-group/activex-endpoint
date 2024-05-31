@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "activexmiddleware"
+name = "activexendpoint"
 version = "0.1.0"
 description = ""
 authors = ["Ignacio Castillo <ignacio.bcastillo@gmail.com>"]

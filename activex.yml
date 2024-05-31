@@ -1,7 +1,7 @@
 services:
-    activex-middleware-0:
-        image: nachocode/activex:middleware
-        container_name: activex-middleware-0
+    activex-endpoint-0:
+        image: nachocode/activex:endpoint
+        container_name: activex-endpoint-0
         ports:
                 - 16666:16666
                 - 16667:16667
