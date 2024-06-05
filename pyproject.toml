@@ -10,7 +10,7 @@ python = "^3.9"
 mictlanx = "0.0.142"
 pyzmq = "^26.0.3"
 cloudpickle = "^3.0.0"
-activex = "^0.0.12"
+activex = "^0.0.13"
 
 
 
