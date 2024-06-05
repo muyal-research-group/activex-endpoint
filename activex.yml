@@ -31,12 +31,41 @@ services:
                 - MICTLANX_LOG_OUTPUT_PATH=/log
                 - MICTLANX_MAX_WORKERS=4
                 - MICTLANX_ROUTERS=mictlanx-router-0:mictlanx-router-0:60666
+                # Tezcanalyticx
+                - TEZCANALYTICX_FLUSH_TIMEOUT=10s
+                - TEZCANALYTICX_BUFFER_SIZE=100
+                - TEZCANALYTICX_HOSTNAME=tezcanalyticx-0
+                - TEZCANALYTICX_LEVEL=0
+                - TEZCANALYTICX_PATH=/api/v4/events
+                - TEZCANALYTICX_PORT=45000
+                - TEZCANALYTICX_PROTOCOL=http
+
         volumes:
                 - activex-endpoint-0:/log
         networks:
                 - mictlanx
+    tezcanalyticx-0:
+        image: nachocode/tezcanalyticx:api
+        container_name:  tezcanalyticx-0
+        environment:
+        - LOGGER_PATH=/log
+        - IP_ADDR=0.0.0.0
+        - PORT=45000
+        - RELOAD=1
+        - PERIOD_WINDOW_TIME_SEC=30s
+        - LOGGER_INTERVAL=24
+        - LOGGER_WHEN=h
+        command: uvicorn tezcanalyticx.server:app --host ${IP_ADDR-0.0.0.0} --port ${PORT-45000}
+        ports:
+        - ${PORT-45000}:${PORT-45000}
+        volumes:
+        - tezcanalyticx-0:/log
+        networks:
+        - mictlanx
+        restart: unless-stopped
 volumes:
     activex-endpoint-0:
+    tezcanalyticx-0:
 networks:
     mictlanx:
        external: true
