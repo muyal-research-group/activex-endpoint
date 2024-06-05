@@ -6,10 +6,23 @@ services:
                 - 16666:16666
                 - 16667:16667
         environment:
-                - ACTIVEX_PROTOCOL=tcp
-                - ACTIVEX_PUB_SUB_PORT=16666
-                - ACTIVEX_REQ_REP_PORT=16667
-                - ACTIVEX_HOSTNAME=0.0.0.0
+                - AXO_ENDPOINT_ID=activex-endpoint-0
+                - AXO_ENDPOINT_DEPENDENCIES=
+                - AXO_LOGGER_PATH=/log
+                - AXO_LOGGER_WHEN=h
+                - AXO_LOGGER_INTERVAL=24
+                - AXO_ENDPOINT_IMAGE=nachocode/activex:endpoint
+                - AXO_PROTOCOL=tcp
+                - AXO_PUB_SUB_PORT=16666
+                - AXO_REQ_RES_PORT=16667
+                - AXO_HOSTNAME=activex-endpoint-0
+                - AXO_ENDPOINTS=
+                # MictlanX
+                - MICTLANX_XOLO_IP_ADDR=mictlanx-xolo-0
+                - MICTLANX_XOLO_API_VERSION=3
+                - MICTLANX_XOLO_NETWORK=10.0.0.0/25
+                - MICTLANX_XOLO_PORT=15000
+                - MICTLANX_XOLO_PROTOCOL=http
                 - MICTLANX_CLIENT_ID=activex-mictlanx-0
                 - MICTLANX_BUCKET_ID=activex
                 - MICTLANX_DEBUG=0
@@ -19,11 +32,11 @@ services:
                 - MICTLANX_MAX_WORKERS=4
                 - MICTLANX_ROUTERS=mictlanx-router-0:mictlanx-router-0:60666
         volumes:
-                - activexmiddleware_log:/log
+                - activex-endpoint-0:/log
         networks:
                 - mictlanx
 volumes:
-    activexmiddleware_log:
+    activex-endpoint-0:
 networks:
     mictlanx:
        external: true

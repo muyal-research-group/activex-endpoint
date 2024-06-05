@@ -17,8 +17,9 @@ RUN touch README.md
 RUN poetry install --no-root
 
 COPY ./activexendpoint/ /app/activexendpoint
-
 RUN poetry install
+COPY ./activex.tar.gz .
+RUN poetry remove activex && poetry add /app/activex.tar.gz
 ENTRYPOINT [ "poetry", "run", "python3", "-m", "activexendpoint.main" ]
 # WORKDIR /app
 

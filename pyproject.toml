@@ -7,10 +7,10 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-mictlanx = "0.0.141"
+mictlanx = "0.0.142"
 pyzmq = "^26.0.3"
-activex = "^0.0.4"
 cloudpickle = "^3.0.0"
+activex = "^0.0.12"
 
 
 
@@ -26,3 +26,4 @@ build-backend = "poetry.core.masonry.api"
 name = "test"
 url = "https://test.pypi.org/simple/"
 priority = "supplemental"
+
