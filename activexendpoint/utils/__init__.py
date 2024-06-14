@@ -10,10 +10,25 @@ import humanfriendly as HF
 from nanoid import generate as nanoid
 from mictlanx.v4.summoner.summoner import Summoner ,SummonContainerPayload,ExposedPort
 from mictlanx.interfaces.payloads import MountX
+from mictlanx.logger.log import Log
 
 AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
 MICTLANX_XOLO_MODE = os.environ.get("MICTLANX_XOLO_MODE","docker")
-logger = logging.getLogger(AXO_ENDPOINT_ID)
+AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH","/log")
+AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN","h")
+AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
+AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG","1")))
+logger = Log(
+    console_handler_filter=lambda x: AXO_DEBUG,
+    create_folder=True,
+    error_log=True,
+    name="activex.utils",
+    path=AXO_LOGGER_PATH,
+    when=AXO_LOGGER_WHEN,
+    interval=AXO_LOGGER_INTERVAL,
+)
+
+# logger = logging.getLogger(AXO_ENDPOINT_ID)
 
 def byte_generator(data, chunk_size=1024)->Generator[bytes,Any,Any]:
     """
@@ -32,36 +47,47 @@ def byte_generator(data, chunk_size=1024)->Generator[bytes,Any,Any]:
 
 def install_package(package:str)->Result[int,Exception]:
     try:
-        status = subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+        # status = subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+        # status = subprocess.check_call([sys.executable, "-m", "poetry", "add", package])
+        command = "poetry add {}".format(package)
+        status = subprocess.run(command, shell=True, capture_output=True, text=True)
         logger.debug({
             "event":"DEPENDENCY.INSTALLED",
+            "executable":sys.executable,
+            "stdout":status.stdout,
+            "stderr":status.stderr,
             "dependencie": package,
         })
-        return Ok(status)
+        return Ok(0)
     except Exception as e:
         logger.error({
             "event":"DEPENDENCY.INSTALLATION.FAILED",
             "dependencie": package,
-            "error":str(e)
+            "error":str(e),
+            "x":e.with_traceback()
         })
         return Err(e)
 
 def install_packages(packages:List[str]=0)->Result[int, Exception]:
     
-    start_time = T.time()
-    succ=0
-    for package in packages:
-        res = install_package(package=package)
-        if res.is_ok:
-            succ+=1
-    logger.info({
-        "event":"DEPENDENCY.INSTALLATION.COMPLETED",
-        "total_dependencies":len(packages),
-        "installed_dependencies":succ,
-        "failed_dependencies":len(packages) - succ,
-        "response_time":T.time() - start_time
-    })
-    return Ok(0)
+    try:
+        start_time = T.time()
+        succ=0
+        for package in packages:
+            res = install_package(package=package)
+            if res.is_ok:
+                succ+=1
+        logger.info({
+            "event":"DEPENDENCY.INSTALLATION.COMPLETED",
+            "total_dependencies":len(packages),
+            "installed_dependencies":succ,
+            "failed_dependencies":len(packages) - succ,
+            "response_time":T.time() - start_time
+        })
+        return Ok(0)
+    except Exception as e:
+        logger.error(str(e))
+        return Err(e)
 
 
 

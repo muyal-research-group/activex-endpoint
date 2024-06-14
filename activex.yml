@@ -17,6 +17,8 @@ services:
                 - AXO_REQ_RES_PORT=16667
                 - AXO_HOSTNAME=activex-endpoint-0
                 - AXO_ENDPOINTS=
+                - AXO_SOURCE_PATH=/source
+                - AXO_SINK_PATH=/sink
                 # MictlanX
                 - MICTLANX_XOLO_IP_ADDR=mictlanx-xolo-0
                 - MICTLANX_XOLO_API_VERSION=3
@@ -42,6 +44,8 @@ services:
 
         volumes:
                 - activex-endpoint-0:/log
+                - activex-endpoint-0-source:/source
+                - activex-endpoint-0-sink:/sink
         networks:
                 - mictlanx
     tezcanalyticx-0:
@@ -65,6 +69,8 @@ services:
         restart: unless-stopped
 volumes:
     activex-endpoint-0:
+    activex-endpoint-0-sink:
+    activex-endpoint-0-source:
     tezcanalyticx-0:
 networks:
     mictlanx:

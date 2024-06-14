@@ -7,16 +7,16 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-mictlanx = "0.0.142"
+mictlanx = "^0.0.148"
 pyzmq = "^26.0.3"
 cloudpickle = "^3.0.0"
-activex = "^0.0.13"
-
-
-
+activex = "^0.0.14"
+aiofiles = "^23.2.1"
+# poetry = "*"
 
 [tool.poetry.group.dev.dependencies]
 pandas = "1.4.3"
+pytest = "^8.2.2"
 
 [build-system]
 requires = ["poetry-core"]

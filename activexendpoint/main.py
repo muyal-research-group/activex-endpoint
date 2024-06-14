@@ -1,14 +1,19 @@
+# import aiofiles.os
 import zmq.asyncio 
 import string
-import humanfriendly as HF
 import activexendpoint.utils as U
+import aiofiles
+import sys
 import time as T
 import os 
 import cloudpickle as CP
 import json as J
+import humanfriendly as HF
 from typing import List,Dict,Any,Callable
 import logging
 import asyncio
+from concurrent.futures import ProcessPoolExecutor,ThreadPoolExecutor
+
 from abc import ABC,abstractmethod
 from option import Result,Ok,Err,Option,Some,NONE
 from activex.endpoint import XoloEndpointManager,DistributedEndpoint
@@ -21,7 +26,8 @@ from mictlanx.utils.index import Utils as MictlanXUtils
 from nanoid import generate as nanoid
 from mictlanx.v4.summoner.summoner import Summoner
 from mictlanx.logger.tezcanalyticx.tezcanalyticx import TezcanalyticXParams
-import sys
+from activexendpoint.store import LocalKVStore
+from activexendpoint.interfaces import Task
 from mictlanx.logger.log import Log
 from dotenv import load_dotenv
 
@@ -35,6 +41,15 @@ AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH","/log")
 AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN","h")
 AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
 AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG","1")))
+AXO_SINK_PATH = os.environ.get("AXO_SINK_PATH","/sink")
+AXO_SOURCE_PATH = os.environ.get("AXO_SOURCE_PATH","/source")
+AXO_DATA_PATH = os.environ.get("AXO_DATA_PATH","/data")
+# AXO_DATA_PATH = os.environ.get("AXO_DATA_PATH","/data")
+
+loop = asyncio.get_event_loop()
+asyncio.set_event_loop(loop=loop)
+
+
 
 logger = Log(
     console_handler_filter=lambda x: AXO_DEBUG,
@@ -105,23 +120,25 @@ mictlanx_client          = Client(
     log_output_path = MICTLANX_LOG_OUTPUT_PATH,
     max_workers     = MICTLANX_MAX_WORKERS,
     routers              = routers, 
-    tezcanalyticx_params = Some(TezcanalyticXParams(
-        flush_timeout= TEZCANALYTICX_FLUSH_TIMEOUT,
-        buffer_size=TEZCANALYTICX_BUFFER_SIZE,
-        hostname=TEZCANALYTICX_HOSTNAME,
-        level=TEZCANALYTICX_LEVEL,
-        path=TEZCANALYTICX_PATH,
-        port=TEZCANALYTICX_PORT,
-        protocol=TEZCANALYTICX_PROTOCOL
-    )) 
+    tezcanalyticx_params = Some(
+        TezcanalyticXParams(
+            flush_timeout= TEZCANALYTICX_FLUSH_TIMEOUT,
+            buffer_size=TEZCANALYTICX_BUFFER_SIZE,
+            hostname=TEZCANALYTICX_HOSTNAME,
+            level=TEZCANALYTICX_LEVEL,
+            path=TEZCANALYTICX_PATH,
+            port=TEZCANALYTICX_PORT,
+            protocol=TEZCANALYTICX_PROTOCOL
+        )
+    ) 
 )
 # ______________________________________________________________
 summoner = Summoner(
-    ip_addr= MICTLANX_XOLO_IP_ADDR,
-    api_version=Some(MICTLANX_XOLO_API_VERSION),
-    network=Some(MICTLANX_XOLO_NETWORK), 
-    port=int(MICTLANX_XOLO_PORT),
-    protocol=MICTLANX_XOLO_PROTOCOL
+    ip_addr     = MICTLANX_XOLO_IP_ADDR,
+    api_version = Some(MICTLANX_XOLO_API_VERSION),
+    network     = Some(MICTLANX_XOLO_NETWORK), 
+    port        = int(MICTLANX_XOLO_PORT),
+    protocol    = MICTLANX_XOLO_PROTOCOL
 )
 
 ERROR_STATUS_INT = -1
@@ -151,85 +168,26 @@ req_rep_socket.bind("{}://{}".format(AXO_PROTOCOL,AXO_REQ_RES_URI))
 
 
 
-
-class KVStore(ABC):
-    @abstractmethod
-    def put(self,key:str,value:Any)->str:
-        pass
-
-    @abstractmethod
-    def get(self,key:str)->Option[Any]:
-        pass
-
-    @abstractmethod
-    def exists(self,key:str)->bool:
-        pass
-
-
-class LocalKVStore(KVStore):
-    def __init__(self):
-        self.__db:Dict[str,Any] = {}
-
-    def put(self, key: str, value: Any) -> str:
-        self.__db.setdefault(key,value)
-
-    def get(self, key: str)->Option[Any]:
-        res = self.__db.get(key,-1)
-        if res == -1:
-            return NONE
-        return Some(res)
-    
-    def exists(self, key: str) -> bool:
-        return key in self.__db
+class Heater:
+    def __init__(self,max_idle_time:str = "10m"):
+        self.start_time = T.time()
+        self.last_invocation = T.time()
+        self.max_idle_time = HF.parse_timespan(max_idle_time)
+        self.envent = asyncio.Event()
+        self.q = []
+    def warm(self,task_id:str=""):
+        self.q.append(task_id)
+        self.last_invocation = T.time()
+    def is_cold(self)->bool:
         
+        return (T.time() - self.last_invocation)  >= self.max_idle_time
+        
+h = Heater()
 
 local_kv = LocalKVStore()
 
 
 # Define a type hint for any callable
-AnyFunctionType = Callable[..., any]
-class Task(object):
-    def __init__(self,topic:str, operation:str, metadata:Dict[str,Any], f:AnyFunctionType,fargs:list= [],fkwargs:dict = {}):
-        self.topic  = topic
-        self.operation = operation
-        self.metadata= metadata
-        self. f = f 
-        self.fargs = fargs
-        self.fkwargs= fkwargs
-        # self.max_workers = 
-        self.endpoint_id = ""
-        self.sink_bucket_id = ""
-        self.source_bucket_id = ""
-        self.output_key = ""
-        self.separator = ";"
-    
-    def get_dependencies(self)->List[str]:
-        deps_str:str = self.fkwargs.get("dependencies",[])
-        return deps_str
-        # deps = deps_str.split(self.get_separator())
-        # return list(filter(lambda x: len(x)>0,deps))
-    
-    def get_separator(self)->str:
-        return self.fkwargs.get("separator",self.separator)
-    
-    def get_endpoint_id(self)->str:
-        return self.fkwargs.get("endpoint_id","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=5)))
-    
-    def get_sink_bucket_id(self)->str:
-        return self.fkwargs.get("sink_bucket_id", nanoid(alphabet=string.ascii_lowercase + string.digits,size=12))
-
-    def get_source_bucket_id(self)->str:
-        return self.fkwargs.get("source_bucket_id", nanoid(alphabet=string.ascii_lowercase+string.digits))
-
-    def get_sink_key(self)->str:
-        return self.fkwargs.get("sink_key", nanoid(alphabet=string.ascii_lowercase+string.digits))
-    def get_sink_keys(self)->List[str]:
-        keys_str:str = self.fkwargs.get("sink_keys","")
-        keys = list(filter(lambda x: len(x)>0 or not x =="",keys_str.split(self.get_separator())))
-        if len(keys) == 0:
-            return [self.get_sink_key()]
-        else: 
-            return keys
 
 # Must be refactor as soon as possible
 def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
@@ -266,7 +224,7 @@ def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
 
 async def put_metadata(topic:str,operation:str, metadata:Dict[str,Any])->Result[str, Exception]:
     start_time = T.time()
-    key = metadata.get("id", -1)
+    key = metadata.get("axo_key", -1)
     if key == -1:
         error_obj = {"key":key,"detail":"Malformed request: It does not contain id field."}
         await req_rep_socket.send_multipart([b"activex",b"BAD.REQUEST", J.dumps(error_obj).encode() ])
@@ -300,146 +258,218 @@ def serialize_fresult(result:Any)->bytes:
     except Exception as e:
         return CP.dumps(result)
 
-async def method_execution(_msg:Task)->Result[Any, Exception]:
-    start_time       = T.time()
-    key              = _msg.metadata.get("key",-1)
-    sink_bucket_id   = _msg.get_sink_bucket_id()
-    # source_bucket_id = _msg.get_source_bucket_id()
-    
+async def method_execution(task:Task)->Result[Any, Exception]:
+    start_time           = T.time()
+    axo_key              = task.get_axo_key()
+    axo_bucket_id        = task.get_axo_bucket_id()
+    axo_source_bucket_id = task.get_source_bucket_id()
+    axo_sink_bucket_id   = task.get_sink_bucket_id()
 
-    logger.debug({
-        "event":"TASK.SHOW.ME",
-        "bucket_id":sink_bucket_id,
-        "key":key,
-        # **_msg.fkwargs
-    })
-    if key == -1:
-        error_msg = "Key not found in metadata"
-        logger.error({
-            "msg":error_msg,
-            "operation":"METHOD.EXEC"
-        })
-        await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-        return Err(Exception(error_msg))
-        # continue
-
-    maybe_mictlanx_metadata = local_kv.get(key=key)
-    if maybe_mictlanx_metadata.is_none:
-        logger.warning({
-            "event":"LOCAL.NOT.FOUND",
-            "bucket_id":sink_bucket_id,
-            "key":key,
-        })
-        get_metadata_start_time = T.time()
-        # Get from MictlanX
-        get_metadata_result:Result[GetMetadataResponse, Exception]= mictlanx_client.get_metadata(key=key,bucket_id=sink_bucket_id).result()
-        if get_metadata_result.is_err:
-            error_msg = "{} not found".format(key)
+    try:
+        if axo_key == -1:
+            error_msg = "Key not found in metadata"
             logger.error({
-                "error":error_msg,
-                "bucket_id":sink_bucket_id,
-                "key":key
+                "msg":error_msg,
+                "operation":"METHOD.EXEC"
             })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
             return Err(Exception(error_msg))
+            # continue
 
-        remote_metadata = get_metadata_result.unwrap()
+        maybe_mictlanx_metadata = local_kv.get(key=axo_key)
+        if maybe_mictlanx_metadata.is_none:
+            logger.warning({
+                "event":"LOCAL.NOT.FOUND",
+                "bucket_id":axo_bucket_id,
+                "key":axo_key,
+            })
+            get_metadata_start_time = T.time()
+            # Get from MictlanX
+            get_metadata_result:Result[GetMetadataResponse, Exception]= mictlanx_client.get_metadata(key=axo_key,bucket_id=axo_bucket_id).result()
+            if get_metadata_result.is_err:
+                error_msg = "{} not found".format(axo_key)
+                logger.error({
+                    "error":error_msg,
+                    "bucket_id":axo_bucket_id,
+                    "key":axo_key
+                })
+                await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
+                return Err(Exception(error_msg))
+
+            remote_metadata = get_metadata_result.unwrap()
+            logger.info({
+                "event":"GET.REMOTE.METADATA",
+                "bucket_id":axo_bucket_id,
+                "key":axo_key,
+                "response_time":T.time() - get_metadata_start_time
+            })
+            put_metadata_start_time = T.time()
+            # Put in metadata
+            await put_metadata(topic=task.topic,operation=task.operation,metadata=remote_metadata.metadata.tags)
+            maybe_mictlanx_metadata = Some(remote_metadata.metadata.tags)
+        
+        local_metadata = maybe_mictlanx_metadata.unwrap()
+        module         = local_metadata.get("module",-1)
+        name           = local_metadata.get("name",-1)
+        add_dummy_module(module, name, Dummy)
+        if module == -1 or name == -1:
+            error_msg = "module or name attribute not found in tags"
+            logger.error({
+                "msg":error_msg,
+                "bucket_id":axo_bucket_id,
+                "key":axo_key,
+                "operation":"METHOD.EXEC"
+            })
+            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
+            return Err(Exception(error_msg))
+            # continue
+        mictlanx_get_start_time =  T.time()
+        obj_result_get_response :Result[GetBytesResponse,Exception]= mictlanx_client.get_with_retry(
+            bucket_id=axo_bucket_id,
+            key=axo_key
+        )
+
+        
+        if obj_result_get_response.is_err:
+            error_msg = "get_to_file failed"
+            logger.error({
+                "msg":error_msg, 
+                "bucket_id":axo_bucket_id,
+                "key":axo_key
+            })
+            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
+            return Err(Exception(error_msg))
+        
+        get_obj_response = obj_result_get_response.unwrap()
+        obj_bytes        = get_obj_response.value
         logger.info({
-            "event":"GET.REMOTE.METADATA",
-            "bucket_id":sink_bucket_id,
-            "key":key,
-            "response_time":T.time() - get_metadata_start_time
+            "event":"GET.OBJECT.REMOTE",
+            "bucket_id":axo_bucket_id,
+            "key":axo_key,
+            "storage_service":"mictlanx",
+            "response_time":T.time() - mictlanx_get_start_time
         })
-        put_metadata_start_time = T.time()
-        # Put in metadata
-        await put_metadata(topic=_msg.topic,operation=_msg.operation,metadata=remote_metadata.metadata.tags)
-        maybe_mictlanx_metadata = Some(remote_metadata.metadata.tags)
-    
-    local_metadata = maybe_mictlanx_metadata.unwrap()
-    module         = local_metadata.get("module",-1)
-    name           = local_metadata.get("name",-1)
-    add_dummy_module(module, name, Dummy)
-    if module == -1 or name == -1:
-        error_msg = "module or name attribute not found in tags"
+        #
+        des_start_time = T.time()
+        obj              = CP.loads(obj_bytes)
+        logger.info({
+            "event":"DESERALIZATION",
+            "bucket_id":axo_bucket_id,
+            "key":axo_key,
+            "response_time":T.time() - des_start_time
+        })
+        # ____________________________________________________
+        logger.debug({
+            "event":"GET.SOURCE.DATA",
+            "axo_source_bucket_id":axo_source_bucket_id,
+            "source_keys":task.get_sink_keys()
+        })
+        # Pattern
+        # Get bucket
+        axo_sink_path_source_bucket_id_path = "{}/{}".format(AXO_SINK_PATH,axo_source_bucket_id)
+        axo_sink_path_sink_bucket_id_path   = "{}/{}".format(AXO_SINK_PATH,axo_sink_bucket_id)
+        os.makedirs(axo_sink_path_sink_bucket_id_path)
+
+        bucket_get = mictlanx_client.get_bucket_data(bucket_id=axo_source_bucket_id, output_folder_path=axo_sink_path_source_bucket_id_path )
+        if bucket_get.is_err:
+            error_msg = "get_bucket_failed"
+            logger.error({
+                "msg":error_msg, 
+                "axo_source_bucket_id":axo_source_bucket_id,
+                "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path
+            })
+            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
+            return Err(Exception(error_msg))
+        logger.debug({
+            "event":"GET.BUCKET.DATA",
+            "axo_source_bucket_id":axo_source_bucket_id,
+            "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path
+        })
+        axo_source_files = bucket_get.unwrap()
+        for axo_source_path in axo_source_files:
+
+            axo_sink_key  = nanoid(alphabet=string.ascii_lowercase+string.digits,size=16)
+            axo_sink_path = "{}/{}".format(axo_sink_path_sink_bucket_id_path,axo_sink_key)
+            logger.debug({
+                "event":"EXECUTING.METHOD",
+                "fname":task.metadata.get("fname",""),
+                "axo_source_bucket_id":axo_source_bucket_id,
+                "axo_source_path":axo_source_path,
+                "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path,
+                # 
+                "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
+                "axo_sink_path":axo_sink_path,
+                "axo_sink_key":axo_sink_key,
+            })
+            # 
+            fkwargs = {
+                **task.fkwargs,
+                "axo_source_path":axo_source_path,
+                "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
+                "axo_sink_path":axo_sink_path,
+                "axo_sink_key":axo_sink_key
+            }
+            res              = task.f(obj,*task.fargs, **fkwargs)
+        # ___________________________________________________
+            logger.debug({
+                "event":"SHOW.RESULT",
+                "n":len(axo_source_files),
+                "axo_source_bucket_id":axo_source_bucket_id,
+                "axo_source_path":axo_source_path,
+                "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path,
+                "axo_sink_path":axo_sink_path,
+                "axo_sink_key":axo_sink_key,
+                "res":str(res)
+            })
+            if not res == None:
+                result_bytes= serialize_fresult(result=res)
+                axo_fsink_key = nanoid(alphabet=string.ascii_lowercase+string.digits, size=16)
+                put_result   = mictlanx_client.put_chunked(
+                    chunks=U.byte_generator(result_bytes),
+                    bucket_id=axo_sink_bucket_id,
+                    key=axo_fsink_key,
+                    tags={
+                        "parent_object_id":axo_key,
+                    }
+                )
+                
+                # print("PUT+RESULT",put_result)
+                if put_result.is_err:
+                    logger.error({
+                        "event":"PUT.CHUNKED.FAILED",
+                        "bucket_id":axo_bucket_id,
+                        "key":axo_fsink_key,
+                    })
+        
+            logger.info({
+                "event":"METHOD.EXEC.COMPLETED",
+                "axo_source_bucket_id":axo_source_bucket_id,
+                "axo_source_path":axo_source_path,
+                # 
+                "axo_sink_bucket_id":axo_sink_bucket_id,
+                "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
+                "axo_sink_path":axo_sink_path,
+                "axo_sink_key":axo_sink_key,
+                "response_time": T.time()- start_time
+            })
+
+        result_metadata = J.dumps({}).encode(encoding="utf-8")
+        
+        await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",SUCCESS_STATUS,result_metadata, result_bytes])
+    except Exception as e:
+        error_msg = "Uknown error"
         logger.error({
             "msg":error_msg,
-            "bucket_id":sink_bucket_id,
-            "key":key,
-            "operation":"METHOD.EXEC"
+            "operation":"METHOD.EXEC",
+            "raw_error":str(e)
         })
         await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
         return Err(Exception(error_msg))
-        # continue
-    
-    obj_result_get_response :Result[GetBytesResponse,Exception]= mictlanx_client.get_with_retry(
-        bucket_id=sink_bucket_id,
-        key=key
-    )
 
-    
-    if obj_result_get_response.is_err:
-        error_msg = "get_to_file failed"
-        logger.error({
-            "msg":error_msg, 
-            "bucket_id":sink_bucket_id,
-            "key":key
-        })
-        await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-        return Err(Exception(error_msg))
-    logger.debug({
-        "event":"GET.REMOTE",
-        "bucket_id":sink_bucket_id,
-        "key":key
-    })
-    get_obj_response = obj_result_get_response.unwrap()
-    obj_bytes        = get_obj_response.value
-    obj              = CP.loads(obj_bytes)
-    
-    # logger.debug({
-    #     "event":"SHOW.ARGS.KWARGS",
-    #     "bucket_id":sink_bucket_id,
-    #     "key":key,
-    #     "args":_msg.fargs,
-    #     "kwargs":_msg.fkwargs,
-    # })
-    # ___________________________________________________
-    res              = _msg.f(obj,*_msg.fargs, **_msg.fkwargs)
-    # ___________________________________________________
-    logger.debug({
-        "event":"SHOW.RESULT",
-        "res":str(res)
-    })
-    result_bytes= serialize_fresult(result=res)
 
-    result_key   = _msg.get_sink_key()
-    put_result   = mictlanx_client.put_chunked(
-        chunks=U.byte_generator(result_bytes),
-        bucket_id=sink_bucket_id,
-        key=result_key,
-        tags={
-            "parent_object_id":key,
-            # "deserializer_method":dm,
-        }
-    )
-    print("PUT+RESULT",put_result)
-    if put_result.is_err:
-        logger.error({
-            "event":"PUT.CHUNKED.FAILED",
-            "bucket_id":sink_bucket_id,
-            "key":result_key,
-        })
-    
-    logger.info({
-        "event":"METHOD.EXEC.COMPLETED",
-        "bucket_id":sink_bucket_id,
-        "key":key,
-        "fresult_size":len(result_bytes),
-        "response_time": T.time()- start_time
-    })
 
-    result_metadata = J.dumps({}).encode(encoding="utf-8")
-    
-    await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",SUCCESS_STATUS,result_metadata, result_bytes])
+
+
 
 
 
@@ -452,6 +482,7 @@ async def main_req_rep():
             _start_time = T.time()
             multipart   = await req_rep_socket.recv_multipart()
             msg_result  = from_multipart_to_task(multipart=multipart)
+
             if msg_result.is_err:
                 logger.error({
                     "msg":str(msg_result.unwrap_err())
@@ -459,18 +490,40 @@ async def main_req_rep():
                 await req_rep_socket.send_multipart([b"activex",b"REQUEST.FAILED",ERROR_STATUS,b"{}",b""])
                 continue
             task = msg_result.unwrap()
+            logger.debug({
+                "event":"TASK",
+                "operation":task.operation,
+                "task_id":task.task_id,
+                "axo_bucket_id":task.get_axo_bucket_id(),
+                "axo_key":task.get_axo_key(),
+                "source_bucket_id":task.get_source_bucket_id(),
+                # "sink_key":task.get_source_key(),
+                "sink_keys":task.get_source_keys(),
+                "sink_bucket_id":task.get_sink_bucket_id(),
+                # "sink_key":task.get_sink_key(),
+                "sink_keys":task.get_sink_keys(),
+                "endpoint_id":task.get_endpoint_id(),
+                "dependencies":task.get_dependencies()
+            })
+            if h.is_cold():
+                logger.warning({
+                    "event":"DRAIN.ENDPOINT"
+                })
+                sys.exit(0)
+            
 
             topic       = task.topic
             operation   = task.operation
             metadata    = task.metadata
 
-          
             if operation =="PUT.METADATA":
+                h.warm(task_id=task.task_id)
                 # __________________________________________
-                # dependencies_start_time = T.time()
                 # Paso magico musical
-                sink_bucket_id = metadata.get("sink_bucket_id","")
-                dependencies = metadata.get("dependencies",[])
+                sink_bucket_id = task.get_sink_bucket_id()
+                dependencies = task.get_dependencies()
+                # sink_bucket_id = metadata.get("sink_bucket_id","")
+                # dependencies = metadata.get("dependencies",[])
                 install_packages(packages=dependencies)
                 # __________________________________________
                 endpoint_id:str = metadata.get("endpoint_id",task.get_endpoint_id())
@@ -530,12 +583,6 @@ async def main_req_rep():
                     res = endpointx.put(key=key, metadata=MetadataX(
                         **metadata
                     ))
-                    # logger.debug({
-                    #     "event":"ENDPOINT.PUT.METADATA.DISTRIBUTED",
-                    #     "key":key,
-                    #     **metadata,
-                    #     "res":str(res),
-                    # })
                     logger.info({
                         "event":"PUT.METADATA.COMPLETED",
                         **metadata,
@@ -559,15 +606,17 @@ async def main_req_rep():
 
 
             elif operation =="METHOD.EXEC":
-                # fbytes = msg.f
+                h.warm(task_id=task.task_id)
                 dependencies = task.get_dependencies()
                 logger.debug({
-                    "event":"DEPENJDENCIES.SHOW",
+                    "event":"DEPENDENCIES.SHOW",
                     "dependencies":dependencies
                 })
                 install_packages(packages=dependencies)
+
                 endpoint_id = task.get_endpoint_id()
-                exists = endpoint_manager.exists(endpoint_id=endpoint_id)
+                exists      = endpoint_manager.exists(endpoint_id=endpoint_id)
+
                 logger.debug({
                     "event":"ENDPOINT.MANAGER",
                     "endpoints":str(endpoint_manager.endpoints),
@@ -577,9 +626,9 @@ async def main_req_rep():
                     "exists":exists
                 })
                 result = await method_execution(task)
-                print(result)
                 continue
             elif operation =="PING":
+                h.warm(task_id=task.task_id)
                 logger.debug({
                     "envent":"PING",
                     "endpoint":AXO_ENDPOINT_ID
@@ -604,21 +653,68 @@ async def main_req_rep():
             # logger.error(e)
 
 
+    
+q = asyncio.Queue(maxsize=int(os.environ.get("AXO_SYNC_MAXSIZE_QUEUE","100")))
+
+async def async_walk(directory):
+    global loop
+    # loop = asyncio.get_running_loop()
+    for dirpath, dirnames, filenames in await loop.run_in_executor(None, os.walk, directory):
+        yield dirpath, dirnames, filenames
+
+async def list_files(directory):
+    async for dirpath, dirnames, filenames in async_walk(directory):
+        for filename in filenames:
+            print(os.path.join(dirpath, filename))
+   
+
+async def run_file_sync():
+    x  =os.environ.get("AXO_SYNC_MAX_IDLE_TIME","20s")
+    AXO_SYNC_MAX_IDLE_TIME = HF.parse_timespan(x)
+    logger.debug({
+        "event":"AXO.FILE.SYNC",
+        "max_idle_time":x
+    })
+    
+    while True:
+        try:
+            item =  await asyncio.wait_for(q.get(), timeout=AXO_SYNC_MAX_IDLE_TIME)
+        except asyncio.TimeoutError as e:
+            logger.warning({
+                "event":"max idle time reached",
+                "max_idle_time":x
+            })
+        except Exception as e: 
+            logger.error(str(e))
+        finally:
+            await asyncio.sleep(delay=AXO_SYNC_MAX_IDLE_TIME)
+
+
+
+async def run_heater():
+    x  =os.environ.get("HEATER_TICK_TIME","30s")
+    HEATER_TICK_TIME = HF.parse_timespan(x)
+    logger.debug({
+        "event":"HEATER.STARTING",
+        "MAX_TICK_TIME":x
+    })
+    while True:
+        if h.is_cold():
+            logger.warning({
+                "event":"ENDPOINT.IS.COLD",
+            })
+
+        await asyncio.sleep(delay=HEATER_TICK_TIME)
+
+        
+
 async def main():
 
     task1 = asyncio.create_task(main_req_rep())
-    # task2 = asyncio.create_task(main_sub())
-    await asyncio.gather(task1)
-    # await asyncio.gather(task1,task2)
+    task2 = asyncio.create_task(run_file_sync())
+    # task2 = asyncio.create_task(run_heater())
+    await asyncio.gather(task1,task2)
 
 if __name__ == "__main__":
-    asyncio.run(main=main())
-    # loop = asyncio.get_event_loop()
-    # tasks = [
-        # loop.create_task(main_req_rep()),
-        # loop.create_task(main()),
-    # ]
-    # loop.run_until_complete(asyncio.gather(*tasks))
-
-    # main_req_rep()
-    # main()
+    loop.run_until_complete(main())
+    # asyncio.run(main=main())
