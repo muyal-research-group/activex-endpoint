@@ -20,6 +20,7 @@ RUN poetry config virtualenvs.create false && \
 
 COPY ./activexendpoint/ /app/activexendpoint
 RUN poetry install
-COPY ./activex.tar.gz .
+# COPY ./activex.tar.gz .
 # RUN poetry remove activex && poetry add /app/activex.tar.gz
+# CMD ["sleep","infinity"]
 ENTRYPOINT [ "poetry", "run", "python3", "-m", "activexendpoint.main" ]

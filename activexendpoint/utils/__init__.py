@@ -49,14 +49,20 @@ def install_package(package:str)->Result[int,Exception]:
     try:
         # status = subprocess.check_call([sys.executable, "-m", "pip", "install", package])
         # status = subprocess.check_call([sys.executable, "-m", "poetry", "add", package])
+        start_time = T.time()
+        logger.debug({
+            "event":"DEPENDENCY.INSTALLATION.START",
+            "dependency":package
+        })
         command = "poetry add {}".format(package)
         status = subprocess.run(command, shell=True, capture_output=True, text=True)
-        logger.debug({
+        logger.info({
             "event":"DEPENDENCY.INSTALLED",
             "executable":sys.executable,
             "stdout":status.stdout,
             "stderr":status.stderr,
             "dependencie": package,
+            "response_time":T.time() - start_time
         })
         return Ok(0)
     except Exception as e:

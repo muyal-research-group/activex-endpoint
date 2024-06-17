@@ -1,4 +1,5 @@
 # import aiofiles.os
+from activex import ActiveX
 import zmq.asyncio 
 import string
 import activexendpoint.utils as U
@@ -50,6 +51,29 @@ loop = asyncio.get_event_loop()
 asyncio.set_event_loop(loop=loop)
 
 
+
+class Serde(ABC):
+    def __init__(self):
+        pass
+    @abstractmethod
+    def serialize(self,axo:ActiveX)->Result[bytes, Exception]:
+        pass
+    @abstractmethod
+    def deserialize(self,x:bytes)->Result[ActiveX, Exception]:
+        pass
+
+class DefaultSerde(Serde):
+    def __init__(self):
+        super().__init__()
+    def serialize(self,axo:ActiveX)->Result[bytes,Exception]:
+        try:
+            return Ok(CP.dumps(axo))
+        except Exception as e:
+            return Err(e)
+    def deserialize(self, x: bytes)->Result[ActiveX, Exception]:
+        return CP.loads(x)
+        
+serde = DefaultSerde()
 
 logger = Log(
     console_handler_filter=lambda x: AXO_DEBUG,
@@ -222,31 +246,32 @@ def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
 
 
 
-async def put_metadata(topic:str,operation:str, metadata:Dict[str,Any])->Result[str, Exception]:
+async def put_metadata(metadata:Dict[str,Any])->Result[str, Exception]:
     start_time = T.time()
-    key = metadata.get("axo_key", -1)
-    if key == -1:
-        error_obj = {"key":key,"detail":"Malformed request: It does not contain id field."}
+    axo_key        = metadata.get("axo_key", -1)
+
+    if axo_key == -1:
+        error_obj = {"key":axo_key,"detail":"Malformed request: It does not contain id field."}
         await req_rep_socket.send_multipart([b"activex",b"BAD.REQUEST", J.dumps(error_obj).encode() ])
-        logger.error("{} {}".format("BAD.REQUEST",key))
+        logger.error("{} {}".format("BAD.REQUEST",axo_key))
         return Err(Exception(error_obj.get("detail","Uknown error")))
         # continue
-    if local_kv.exists(key=key):
-        error_obj = {"key":key, "detail":"{} already exists".format(key)}
+    if local_kv.exists(key=axo_key):
+        error_obj = {"key":axo_key, "detail":"{} already exists".format(axo_key)}
         await req_rep_socket.send_multipart([b"activex",b"ALREADY.EXISTS", J.dumps(error_obj).encode() ])
-        logger.error("{} {}".format("ALREADY.EXISTS",key))
+        logger.error("{} {}".format("ALREADY.EXISTS",axo_key))
         return Err(Exception(error_obj.get("detail","Uknown error")))
     
-    local_kv.put(key=key, value= metadata)
+    local_kv.put(key=axo_key, value= metadata)
     rt = T.time() - start_time
     logger.info({
         "event":"PUT.METADATA",
-        "key":key,
+        "key":axo_key,
         **metadata,
         "response_time":rt
     })
         # "{} {} {}".format("PUT.METADATA",key,rt))
-    return Ok(key)
+    return Ok(axo_key)
 
 
 
@@ -280,17 +305,22 @@ async def method_execution(task:Task)->Result[Any, Exception]:
         if maybe_mictlanx_metadata.is_none:
             logger.warning({
                 "event":"LOCAL.NOT.FOUND",
-                "bucket_id":axo_bucket_id,
+                "axo_bucket_id":axo_bucket_id,
                 "key":axo_key,
             })
             get_metadata_start_time = T.time()
             # Get from MictlanX
-            get_metadata_result:Result[GetMetadataResponse, Exception]= mictlanx_client.get_metadata(key=axo_key,bucket_id=axo_bucket_id).result()
+            get_metadata_result:Result[GetMetadataResponse, Exception]= mictlanx_client.get_metadata(
+                key       = axo_key,
+                bucket_id = axo_bucket_id
+            ).result()
+            
             if get_metadata_result.is_err:
                 error_msg = "{} not found".format(axo_key)
                 logger.error({
+                    "event":"GET.METADATA.FAILED",
                     "error":error_msg,
-                    "bucket_id":axo_bucket_id,
+                    "axo_bucket_id":axo_bucket_id,
                     "key":axo_key
                 })
                 await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
@@ -303,7 +333,7 @@ async def method_execution(task:Task)->Result[Any, Exception]:
                 "key":axo_key,
                 "response_time":T.time() - get_metadata_start_time
             })
-            put_metadata_start_time = T.time()
+            # put_metadata_start_time = T.time()
             # Put in metadata
             await put_metadata(topic=task.topic,operation=task.operation,metadata=remote_metadata.metadata.tags)
             maybe_mictlanx_metadata = Some(remote_metadata.metadata.tags)
@@ -315,15 +345,16 @@ async def method_execution(task:Task)->Result[Any, Exception]:
         if module == -1 or name == -1:
             error_msg = "module or name attribute not found in tags"
             logger.error({
+                "event":"MODULE.OR.NAME.NOT.FOUND",
                 "msg":error_msg,
                 "bucket_id":axo_bucket_id,
                 "key":axo_key,
-                "operation":"METHOD.EXEC"
             })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
             return Err(Exception(error_msg))
             # continue
         mictlanx_get_start_time =  T.time()
+
         obj_result_get_response :Result[GetBytesResponse,Exception]= mictlanx_client.get_with_retry(
             bucket_id=axo_bucket_id,
             key=axo_key
@@ -351,7 +382,16 @@ async def method_execution(task:Task)->Result[Any, Exception]:
         })
         #
         des_start_time = T.time()
-        obj              = CP.loads(obj_bytes)
+        obj_resul              =serde.deserialize(obj_bytes)
+        if obj_resul.is_err:
+            logger.error({
+                "event":"DESERIALIZED.FAILEd",
+                "bucket_id":axo_bucket_id,
+                "key":axo_key,
+                "msg":str(obj_resul.unwrap_err())
+            })
+        obj = obj_resul.unwrap()
+        # CP.loads(obj_bytes)
         logger.info({
             "event":"DESERALIZATION",
             "bucket_id":axo_bucket_id,
@@ -520,7 +560,7 @@ async def main_req_rep():
                 h.warm(task_id=task.task_id)
                 # __________________________________________
                 # Paso magico musical
-                sink_bucket_id = task.get_sink_bucket_id()
+                # sink_bucket_id = task.get_sink_bucket_id()
                 dependencies = task.get_dependencies()
                 # sink_bucket_id = metadata.get("sink_bucket_id","")
                 # dependencies = metadata.get("dependencies",[])
@@ -591,7 +631,7 @@ async def main_req_rep():
                     await req_rep_socket.send_multipart([b"activex",b"PUT.METADATA.SUCCESSED",SUCCESS_STATUS,b"{}",key.encode() ])
                 else: 
                 # __________________________________________
-                    _result = (await put_metadata(topic=topic, operation=operation,metadata=metadata))
+                    _result = (await put_metadata(metadata=metadata))
                     if _result.is_ok:
                         response = _result.unwrap()
                         logger.info({
