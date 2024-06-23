@@ -3,14 +3,13 @@ from activex import ActiveX
 import zmq.asyncio 
 import string
 import activexendpoint.utils as U
-import aiofiles
 import sys
 import time as T
 import os 
 import cloudpickle as CP
 import json as J
 import humanfriendly as HF
-from typing import List,Dict,Any,Callable
+from typing import List,Dict,Any,Callable,Tuple
 import logging
 import asyncio
 from concurrent.futures import ProcessPoolExecutor,ThreadPoolExecutor
@@ -37,7 +36,7 @@ if not ENV_FILE_PATH == -1:
     load_dotenv(ENV_FILE_PATH)
 
 
-AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
+AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
 AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH","/log")
 AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN","h")
 AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
@@ -67,12 +66,34 @@ class DefaultSerde(Serde):
         super().__init__()
     def serialize(self,axo:ActiveX)->Result[bytes,Exception]:
         try:
-            return Ok(CP.dumps(axo))
+            return Ok(axo.to_bytes())
+            # return Ok(CP.dumps(axo))
         except Exception as e:
             return Err(e)
     def deserialize(self, x: bytes)->Result[ActiveX, Exception]:
-        return CP.loads(x)
-        
+        try:
+            return ActiveX.from_bytes(x)
+            # return Ok(CP.loads(x))
+        except Exception as e:
+            return Err(e)
+    def serialize_fresult(self,result:Any)->Result[Tuple[int, bytes],Exception]:
+        try:
+            x = J.dumps(result)
+            return Ok((0,x.encode()))
+        except Exception as e:
+            try: 
+                x = CP.dumps(result)
+                return Ok((1,x))
+            except Exception as e:
+                return Err(e)
+   
+
+def serialize_fresult(result:Any)->bytes:
+    try:
+        x = J.dumps(result)
+        return x.encode()
+    except Exception as e:
+        return CP.dumps(result)
 serde = DefaultSerde()
 
 logger = Log(
@@ -133,7 +154,9 @@ TEZCANALYTICX_LEVEL         = int(os.environ.get("TEZCANALYTICX_LEVEL","0"))
 TEZCANALYTICX_PATH          = os.environ.get("TEZCANALYTICX_PATH","/api/v4/events")
 TEZCANALYTICX_PORT          = int(os.environ.get("TEZCANALYTICX_PORT","45000"))
 TEZCANALYTICX_PROTOCOL      = os.environ.get("TEZCANALYTICX_PROTOCOL","http")
-
+from activex.contextmanager import ActiveXContextManager
+from activex.runtime.local import LocalRuntime
+from activex.storage.data import MictlanXStorageService
 
 mictlanx_client          = Client(
     client_id       = MICTLANX_CLIENT_ID,
@@ -155,6 +178,13 @@ mictlanx_client          = Client(
             protocol=TEZCANALYTICX_PROTOCOL
         )
     ) 
+)
+axcm = ActiveXContextManager(
+    runtime= LocalRuntime(
+        storage_service=Some(
+            MictlanXStorageService.from_client(mictlanx_client)
+        )
+    )
 )
 # ______________________________________________________________
 summoner = Summoner(
@@ -276,21 +306,17 @@ async def put_metadata(metadata:Dict[str,Any])->Result[str, Exception]:
 
 
 
-def serialize_fresult(result:Any)->bytes:
-    try:
-        x = J.dumps(result)
-        return x.encode()
-    except Exception as e:
-        return CP.dumps(result)
+# def valid_axo_key(task)
 
 async def method_execution(task:Task)->Result[Any, Exception]:
-    start_time           = T.time()
-    axo_key              = task.get_axo_key()
-    axo_bucket_id        = task.get_axo_bucket_id()
-    axo_source_bucket_id = task.get_source_bucket_id()
-    axo_sink_bucket_id   = task.get_sink_bucket_id()
+    start_time       = T.time()
+    axo_key          = task.get_axo_key()
+    axo_bucket_id    = task.get_axo_bucket_id()
+    source_bucket_id = task.get_source_bucket_id()
+    sink_bucket_id   = task.get_sink_bucket_id()
 
     try:
+        # axo_key validation _______________________________________________________________________________________
         if axo_key == -1:
             error_msg = "Key not found in metadata"
             logger.error({
@@ -299,8 +325,9 @@ async def method_execution(task:Task)->Result[Any, Exception]:
             })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
             return Err(Exception(error_msg))
-            # continue
+        # _______________________________________________________________________________________
 
+        # _______________________________________________________________________________________
         maybe_mictlanx_metadata = local_kv.get(key=axo_key)
         if maybe_mictlanx_metadata.is_none:
             logger.warning({
@@ -309,12 +336,12 @@ async def method_execution(task:Task)->Result[Any, Exception]:
                 "key":axo_key,
             })
             get_metadata_start_time = T.time()
-            # Get from MictlanX
             get_metadata_result:Result[GetMetadataResponse, Exception]= mictlanx_client.get_metadata(
                 key       = axo_key,
                 bucket_id = axo_bucket_id
             ).result()
             
+            # Check if get_metadata got an error_____________________________________________
             if get_metadata_result.is_err:
                 error_msg = "{} not found".format(axo_key)
                 logger.error({
@@ -325,6 +352,7 @@ async def method_execution(task:Task)->Result[Any, Exception]:
                 })
                 await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
                 return Err(Exception(error_msg))
+            # _______________________________________________________________________________________
 
             remote_metadata = get_metadata_result.unwrap()
             logger.info({
@@ -333,15 +361,14 @@ async def method_execution(task:Task)->Result[Any, Exception]:
                 "key":axo_key,
                 "response_time":T.time() - get_metadata_start_time
             })
-            # put_metadata_start_time = T.time()
-            # Put in metadata
-            await put_metadata(topic=task.topic,operation=task.operation,metadata=remote_metadata.metadata.tags)
+            await put_metadata(metadata=remote_metadata.metadata.tags)
             maybe_mictlanx_metadata = Some(remote_metadata.metadata.tags)
         
         local_metadata = maybe_mictlanx_metadata.unwrap()
         module         = local_metadata.get("module",-1)
         name           = local_metadata.get("name",-1)
-        add_dummy_module(module, name, Dummy)
+        # add_dummy_module(module, name, Dummy)
+        # _______________________________________________________________________________________
         if module == -1 or name == -1:
             error_msg = "module or name attribute not found in tags"
             logger.error({
@@ -352,7 +379,7 @@ async def method_execution(task:Task)->Result[Any, Exception]:
             })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
             return Err(Exception(error_msg))
-            # continue
+        # _______________________________________________________________________________________
         mictlanx_get_start_time =  T.time()
 
         obj_result_get_response :Result[GetBytesResponse,Exception]= mictlanx_client.get_with_retry(
@@ -361,6 +388,7 @@ async def method_execution(task:Task)->Result[Any, Exception]:
         )
 
         
+        # _______________________________________________________________________________________
         if obj_result_get_response.is_err:
             error_msg = "get_to_file failed"
             logger.error({
@@ -370,7 +398,7 @@ async def method_execution(task:Task)->Result[Any, Exception]:
             })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
             return Err(Exception(error_msg))
-        
+        # _______________________________________________________________________________________
         get_obj_response = obj_result_get_response.unwrap()
         obj_bytes        = get_obj_response.value
         logger.info({
@@ -380,18 +408,22 @@ async def method_execution(task:Task)->Result[Any, Exception]:
             "storage_service":"mictlanx",
             "response_time":T.time() - mictlanx_get_start_time
         })
-        #
+        # _______________________________________________________________________________________
         des_start_time = T.time()
         obj_resul              =serde.deserialize(obj_bytes)
         if obj_resul.is_err:
+            error_msg = "DESERIALIZED.FAILED"
             logger.error({
-                "event":"DESERIALIZED.FAILEd",
+                "event":error_msg,
                 "bucket_id":axo_bucket_id,
                 "key":axo_key,
                 "msg":str(obj_resul.unwrap_err())
             })
+            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
+            return Err(Exception(error_msg))
+        # _______________________________________________________________________________________
+
         obj = obj_resul.unwrap()
-        # CP.loads(obj_bytes)
         logger.info({
             "event":"DESERALIZATION",
             "bucket_id":axo_bucket_id,
@@ -401,106 +433,138 @@ async def method_execution(task:Task)->Result[Any, Exception]:
         # ____________________________________________________
         logger.debug({
             "event":"GET.SOURCE.DATA",
-            "axo_source_bucket_id":axo_source_bucket_id,
-            "source_keys":task.get_sink_keys()
+            "axo_source_bucket_id":source_bucket_id,
         })
         # Pattern
         # Get bucket
-        axo_sink_path_source_bucket_id_path = "{}/{}".format(AXO_SINK_PATH,axo_source_bucket_id)
-        axo_sink_path_sink_bucket_id_path   = "{}/{}".format(AXO_SINK_PATH,axo_sink_bucket_id)
-        os.makedirs(axo_sink_path_sink_bucket_id_path)
+        axo_sink_path_source_bucket_id_path = "{}/{}".format(AXO_SINK_PATH,source_bucket_id)
+        axo_sink_path_sink_bucket_id_path   = "{}/{}".format(AXO_SINK_PATH,sink_bucket_id)
+        os.makedirs(axo_sink_path_sink_bucket_id_path,exist_ok=True)
 
-        bucket_get = mictlanx_client.get_bucket_data(bucket_id=axo_source_bucket_id, output_folder_path=axo_sink_path_source_bucket_id_path )
-        if bucket_get.is_err:
-            error_msg = "get_bucket_failed"
-            logger.error({
-                "msg":error_msg, 
-                "axo_source_bucket_id":axo_source_bucket_id,
-                "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-            return Err(Exception(error_msg))
-        logger.debug({
-            "event":"GET.BUCKET.DATA",
-            "axo_source_bucket_id":axo_source_bucket_id,
-            "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path
-        })
-        axo_source_files = bucket_get.unwrap()
-        for axo_source_path in axo_source_files:
-
-            axo_sink_key  = nanoid(alphabet=string.ascii_lowercase+string.digits,size=16)
-            axo_sink_path = "{}/{}".format(axo_sink_path_sink_bucket_id_path,axo_sink_key)
-            logger.debug({
-                "event":"EXECUTING.METHOD",
-                "fname":task.metadata.get("fname",""),
-                "axo_source_bucket_id":axo_source_bucket_id,
-                "axo_source_path":axo_source_path,
-                "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path,
-                # 
-                "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
-                "axo_sink_path":axo_sink_path,
-                "axo_sink_key":axo_sink_key,
-            })
-            # 
-            fkwargs = {
-                **task.fkwargs,
-                "axo_source_path":axo_source_path,
-                "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
-                "axo_sink_path":axo_sink_path,
-                "axo_sink_key":axo_sink_key
-            }
-            res              = task.f(obj,*task.fargs, **fkwargs)
-        # ___________________________________________________
-            logger.debug({
-                "event":"SHOW.RESULT",
-                "n":len(axo_source_files),
-                "axo_source_bucket_id":axo_source_bucket_id,
-                "axo_source_path":axo_source_path,
-                "axo_sink_path_source_bucket_id_path":axo_sink_path_source_bucket_id_path,
-                "axo_sink_path":axo_sink_path,
-                "axo_sink_key":axo_sink_key,
-                "res":str(res)
-            })
-            if not res == None:
-                result_bytes= serialize_fresult(result=res)
-                axo_fsink_key = nanoid(alphabet=string.ascii_lowercase+string.digits, size=16)
-                put_result   = mictlanx_client.put_chunked(
-                    chunks=U.byte_generator(result_bytes),
-                    bucket_id=axo_sink_bucket_id,
-                    key=axo_fsink_key,
-                    tags={
-                        "parent_object_id":axo_key,
-                    }
-                )
-                
-                # print("PUT+RESULT",put_result)
-                if put_result.is_err:
-                    logger.error({
-                        "event":"PUT.CHUNKED.FAILED",
-                        "bucket_id":axo_bucket_id,
-                        "key":axo_fsink_key,
+        bucket_metadata_gen = mictlanx_client.get_all_bucket_metadata(bucket_id=source_bucket_id)
+        result_json = {
+            "successed_balls":0,
+            "failed_balls":0,
+            "response_time":0
+        }
+        # for source_ball_local_path in source_bucket_files:
+        fname = task.metadata.get("fname",task.f.__name__)
+        skip_balls = []
+        for router_response in bucket_metadata_gen:
+            for ball in router_response.balls:
+                status = -1
+                combined_key = "{}@{}".format(ball.bucket_id, ball.key)
+                if combined_key in skip_balls:
+                    logger.debug({
+                        "event":"SKIP.BALL",
+                        "bucket_id":ball.bucket_id,
+                        "key":ball.key,
+                        "status":status
                     })
-        
-            logger.info({
-                "event":"METHOD.EXEC.COMPLETED",
-                "axo_source_bucket_id":axo_source_bucket_id,
-                "axo_source_path":axo_source_path,
-                # 
-                "axo_sink_bucket_id":axo_sink_bucket_id,
-                "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
-                "axo_sink_path":axo_sink_path,
-                "axo_sink_key":axo_sink_key,
-                "response_time": T.time()- start_time
-            })
+                    continue
+                axo_sink_key  = nanoid(alphabet=string.ascii_lowercase+string.digits,size=16)
+                axo_sink_path = "{}/{}".format(axo_sink_path_sink_bucket_id_path,axo_sink_key)
+                axo_result_id = "{}.{}.{}".format(fname,sink_bucket_id ,axo_sink_key )
+                fkwargs = {
+                    **task.fkwargs,
+                    "axo_result_id":axo_result_id,
+                    "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
+                    "axo_sink_path":axo_sink_path,
+                    "axo_sink_key":axo_sink_key,
+                    "source_bucket_id":ball.bucket_id,
+                    "source_key":ball.key,
+                    "method_name":fname,
+                    "metadata":ball.tags,
+                    "mictlanx":axcm.runtime.storage_service
+                }
+                t_call_start = T.time()
+                res = ActiveX.call(*task.fargs,instance=obj,**fkwargs)
+                if res.is_ok:
+                    logger.info({
+                        "event":"METHOD.CALL",
+                        "method_name":fname,
+                        "axo_result_id":axo_result_id,
+                        "axo_sink_path":axo_sink_path,
+                        "axo_sink_key":axo_sink_key,
+                        "source_bucket_id":ball.bucket_id,
+                        "source_key":ball.key,
+                        "response_time":T.time() -  t_call_start
+                    })
+                    res = res.unwrap()
+                    if not res == None:
+                        (f_serialize_mode,f_result_bytes)= serde.serialize_fresult(result=res).unwrap()
+                        axo_fsink_key = nanoid(alphabet=string.ascii_lowercase+string.digits, size=16)
+                        result_json[axo_result_id] = f_result_bytes.decode() if f_serialize_mode == 0 else axo_fsink_key
+                        put_result   = mictlanx_client.put_chunked(
+                            chunks=U.byte_generator(f_result_bytes),
+                            bucket_id=sink_bucket_id,
+                            key=axo_fsink_key,
+                            tags={
+                                "method_name":fname,
+                                "axo_result_id":axo_result_id,
+                                "axo_sink_path":axo_sink_path,
+                                "axo_sink_key":axo_sink_key,
+                                "source_bucket_id":ball.bucket_id,
+                                "source_key":ball.key,
+                            }
+                        )
+                        if put_result.is_err:
+                            fbs = result_json.setdefault("failed_balls",0)
+                            result_json["failed_balls"] = fbs +1
+                            logger.error({
+                                "event":"PUT.CHUNKED.FAILED",
+                                "bucket_id":axo_bucket_id,
+                                "key":axo_fsink_key,
+                            })
+                        else:
+                            status = 1 
+                            fbs = result_json.setdefault("successed_balls",0)
+                            result_json["successed_balls"] = fbs +1
+                    else:
+                        logger.warning({
+                            "event":"METHOD.EXEC.NO.OUTPUT",
+                            "axo_source_bucket_id":source_bucket_id,
+                            # "axo_source_path":source_ball_local_path,
+                            "axo_sink_bucket_id":sink_bucket_id,
+                            "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
+                            "axo_sink_path":axo_sink_path,
+                            "axo_sink_key":axo_sink_key,
+                            "response_time": T.time()- start_time
+                        })
+                        
+                        # raise Exception("{} execution failed".format(fname))
+                else:
+                    logger.error({
+                        "event":"METHOD.EXCUTION.FAILED",
+                        "reason":str(res.unwrap_err())
+                    })
+                
 
+                if status == 0:
+                    skip_balls.append(combined_key)
+
+                    # continue
+
+        logger.info({
+            "event":"METHOD.EXEC.COMPLETED",
+            "method_name":fname,
+            "axo_source_bucket_id":source_bucket_id,
+            # "axo_source_path":source_ball_local_path,
+            "axo_sink_bucket_id":sink_bucket_id,
+            # "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
+            # "axo_sink_path":axo_sink_path,
+            # "axo_sink_key":axo_sink_key,
+            "response_time": T.time()- start_time
+        })
+        result_json["response_time"] = T.time()- start_time
         result_metadata = J.dumps({}).encode(encoding="utf-8")
-        
+        result_bytes = J.dumps(result_json).encode()
         await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",SUCCESS_STATUS,result_metadata, result_bytes])
     except Exception as e:
         error_msg = "Uknown error"
         logger.error({
+            "event":"METHDO.EXECUTION.FAILED",
             "msg":error_msg,
-            "operation":"METHOD.EXEC",
             "raw_error":str(e)
         })
         await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
@@ -537,17 +601,15 @@ async def main_req_rep():
                 "axo_bucket_id":task.get_axo_bucket_id(),
                 "axo_key":task.get_axo_key(),
                 "source_bucket_id":task.get_source_bucket_id(),
-                # "sink_key":task.get_source_key(),
-                "sink_keys":task.get_source_keys(),
                 "sink_bucket_id":task.get_sink_bucket_id(),
-                # "sink_key":task.get_sink_key(),
-                "sink_keys":task.get_sink_keys(),
                 "endpoint_id":task.get_endpoint_id(),
                 "dependencies":task.get_dependencies()
             })
             if h.is_cold():
                 logger.warning({
-                    "event":"DRAIN.ENDPOINT"
+                    "event":"DRAIN.ENDPOINT",
+                    "msg":"max_idle_timeout reached",
+                    "max_idle_timeout":HF.format_timespan(h.max_idle_time),
                 })
                 sys.exit(0)
             
@@ -560,14 +622,11 @@ async def main_req_rep():
                 h.warm(task_id=task.task_id)
                 # __________________________________________
                 # Paso magico musical
-                # sink_bucket_id = task.get_sink_bucket_id()
                 dependencies = task.get_dependencies()
-                # sink_bucket_id = metadata.get("sink_bucket_id","")
-                # dependencies = metadata.get("dependencies",[])
                 install_packages(packages=dependencies)
                 # __________________________________________
                 endpoint_id:str = metadata.get("endpoint_id",task.get_endpoint_id())
-                exists = endpoint_manager.exists(endpoint_id=endpoint_id)
+                exists          = endpoint_manager.exists(endpoint_id=endpoint_id)
                 logger.debug({
                     "event":"ENDPOINT.MANAGER",
                     "endpoints":str(endpoint_manager.endpoints),
@@ -623,12 +682,14 @@ async def main_req_rep():
                     res = endpointx.put(key=key, metadata=MetadataX(
                         **metadata
                     ))
-                    logger.info({
-                        "event":"PUT.METADATA.COMPLETED",
-                        **metadata,
-                        "response_time":T.time() - _start_time
-                    })
-                    await req_rep_socket.send_multipart([b"activex",b"PUT.METADATA.SUCCESSED",SUCCESS_STATUS,b"{}",key.encode() ])
+                    if res.is_ok:
+                        logger.info({
+                            "event":"PUT.METADATA.COMPLETED",
+                            **metadata,
+                            "response_time":T.time() - _start_time
+                        })
+                        await req_rep_socket.send_multipart([b"activex",b"PUT.METADATA.SUCCESSED",SUCCESS_STATUS,b"{}",key.encode() ])
+                    raise Exception("{} fail to put.metadata {}".format(endpoint_id, key))
                 else: 
                 # __________________________________________
                     _result = (await put_metadata(metadata=metadata))

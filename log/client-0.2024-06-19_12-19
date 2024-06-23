@@ -1,0 +1,14 @@
+{
+    "timestamp": "2024-06-19 12:19:01,826",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "2lznxt554duyextli051a3yp3qkaz9ge",
+    "key": "6cbg48jxxgo7gfxf",
+    "size": 19492,
+    "response_time": 0.021556615829467773,
+    "metadata_service_time": 0.00947260856628418,
+    "peer_id": "mictlanx-peer-0"
+}
+

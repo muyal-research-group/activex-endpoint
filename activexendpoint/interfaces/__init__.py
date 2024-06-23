@@ -59,8 +59,8 @@ class Task(object):
     
     # def get_sink_key(self)->str:
         # return self.__get_state().get("sink_key", nanoid(alphabet=string.ascii_lowercase+string.digits))
-    def get_sink_keys(self)->List[str]:
-        return self.__get_state().get("sink_keys",[])
+    # def get_sink_keys(self)->List[str]:
+        # return self.__get_state().get("sink_keys",[])
         # retu
         # keys = list(filter(lambda x: len(x)>0 or not x =="",keys_str.split(self.get_separator())))
         # if len(keys) == 0:

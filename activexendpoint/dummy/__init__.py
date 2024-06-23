@@ -1,5 +1,5 @@
 import os
-import string
+# import string
 from nanoid import generate as nanoid
 from mictlanx.logger.log import Log
 import types
@@ -29,10 +29,12 @@ class Dummy:
         return self.__dict__
 
     def __setstate__(self, state):
-        self.__dict__.update(state)
+        print("SETSTATE",state)
+        self.__dict__.update({**state,"methods":{},"attributes":{}})
 
     def __getattr__(self, name):
         # Provide access to methods
+        # print("GETATTR",self.__dict__, name, )
         if name in self.__dict__['methods']:
             return self.__dict__['methods'][name]
         # Provide access to attributes
@@ -41,21 +43,14 @@ class Dummy:
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
+        print("__SETATTR__", name,value)
         if callable(value):
             self.__dict__['methods'][name] = value
         else:
             self.__dict__['attributes'][name] = value
-    # def __init__(self, *args, **kwargs):
-    #     pass
 
-    # def __getstate__(self):
-    #     return {}
 
-    # def __setstate__(self, state):
-    #     self.__dict__.update(state)
-    
-
-def add_dummy_module(module_path, class_name, dummy_class):
+def add_dummy_module(module_path, class_name, dummy_class=None):
     logger.debug({
         "event":"ADD.MODULE.BEFORE",
         "module":module_path,
@@ -80,7 +75,8 @@ def add_dummy_module(module_path, class_name, dummy_class):
     # Create the final module and add the dummy class
     module_name = parts[-1]
     final_module = types.ModuleType(module_path)
-    setattr(final_module, class_name, dummy_class)
+    if not dummy_class == None:
+        setattr(final_module, class_name, dummy_class)
     sys.modules[module_path] = final_module
 
     # Add the final module to its parent module

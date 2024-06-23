@@ -1,0 +1,42 @@
+{
+    "timestamp": "2024-06-18 20:42:05,530",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.02042865753173828,
+    "metadata_service_time": 0.009474754333496094,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-18 20:42:05,548",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition1",
+    "size": 5853,
+    "response_time": 0.015041351318359375,
+    "metadata_service_time": 0.005597114562988281,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-18 20:42:05,565",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition_code",
+    "size": 4580,
+    "response_time": 0.015888452529907227,
+    "metadata_service_time": 0.0051441192626953125,
+    "peer_id": "mictlanx-peer-1"
+}
+

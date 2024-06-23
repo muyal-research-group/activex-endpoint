@@ -1,0 +1,644 @@
+{
+    "timestamp": "2024-06-17 21:42:09,898",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01765918731689453,
+    "metadata_service_time": 0.007180452346801758,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 21:42:42,607",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.016022443771362305,
+    "metadata_service_time": 0.006793022155761719,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 21:42:52,944",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01601433753967285,
+    "metadata_service_time": 0.007105112075805664,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 21:46:14,389",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015352249145507812,
+    "metadata_service_time": 0.0066759586334228516,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 21:46:53,317",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01544189453125,
+    "metadata_service_time": 0.0068073272705078125,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 21:47:22,287",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015496015548706055,
+    "metadata_service_time": 0.006486415863037109,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 21:49:02,370",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01616811752319336,
+    "metadata_service_time": 0.006866931915283203,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 21:51:20,070",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015666484832763672,
+    "metadata_service_time": 0.007135629653930664,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 21:51:28,373",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.016005516052246094,
+    "metadata_service_time": 0.007036447525024414,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 21:52:12,903",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01538395881652832,
+    "metadata_service_time": 0.006767988204956055,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 21:53:07,606",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01775527000427246,
+    "metadata_service_time": 0.007365226745605469,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:11:26,523",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.017154693603515625,
+    "metadata_service_time": 0.0072078704833984375,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:11:26,625",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.10174727439880371,
+    "metadata_service_time": 0.025128602981567383,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:11:46,193",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015747547149658203,
+    "metadata_service_time": 0.006764411926269531,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:11:46,207",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013690471649169922,
+    "metadata_service_time": 0.005024909973144531,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:12:12,655",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015772104263305664,
+    "metadata_service_time": 0.006874799728393555,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:12:12,669",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013659954071044922,
+    "metadata_service_time": 0.0048675537109375,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:38:40,325",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.016656160354614258,
+    "metadata_service_time": 0.0073587894439697266,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:38:40,339",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.01365208625793457,
+    "metadata_service_time": 0.005069255828857422,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:41:39,376",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015567302703857422,
+    "metadata_service_time": 0.006639003753662109,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:41:39,390",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013587474822998047,
+    "metadata_service_time": 0.004971027374267578,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:42:04,327",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.016096830368041992,
+    "metadata_service_time": 0.006704807281494141,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:42:04,342",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.014225006103515625,
+    "metadata_service_time": 0.005197286605834961,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:43:35,699",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.019939661026000977,
+    "metadata_service_time": 0.007970094680786133,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:43:35,715",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.015625715255737305,
+    "metadata_service_time": 0.006495952606201172,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:43:47,567",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01535177230834961,
+    "metadata_service_time": 0.006647586822509766,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:43:47,581",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013390541076660156,
+    "metadata_service_time": 0.005011558532714844,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:44:13,269",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.016066312789916992,
+    "metadata_service_time": 0.006426095962524414,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:44:13,284",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.014197587966918945,
+    "metadata_service_time": 0.005579471588134766,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:45:34,984",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01554560661315918,
+    "metadata_service_time": 0.006624460220336914,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:45:34,999",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013990402221679688,
+    "metadata_service_time": 0.00498509407043457,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:45:46,869",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01554107666015625,
+    "metadata_service_time": 0.006486177444458008,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:45:46,884",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.014286994934082031,
+    "metadata_service_time": 0.005091190338134766,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:46:03,887",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015405654907226562,
+    "metadata_service_time": 0.006537675857543945,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:46:03,902",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.014530181884765625,
+    "metadata_service_time": 0.005322933197021484,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:46:16,660",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.01588129997253418,
+    "metadata_service_time": 0.007295131683349609,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:46:16,675",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.014360189437866211,
+    "metadata_service_time": 0.005303621292114258,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:46:32,030",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015709877014160156,
+    "metadata_service_time": 0.006769418716430664,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:46:32,044",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013462066650390625,
+    "metadata_service_time": 0.004945278167724609,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:49:36,798",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015330076217651367,
+    "metadata_service_time": 0.0067901611328125,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:49:36,812",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013648509979248047,
+    "metadata_service_time": 0.005007028579711914,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 22:52:58,768",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.016213178634643555,
+    "metadata_service_time": 0.006704092025756836,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 22:52:58,783",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition",
+    "size": 591,
+    "response_time": 0.013807296752929688,
+    "metadata_service_time": 0.005175113677978516,
+    "peer_id": "mictlanx-peer-0"
+}
+
+{
+    "timestamp": "2024-06-17 23:04:38,971",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "0ukx01xpqjz6qh4s",
+    "size": 610,
+    "response_time": 0.015762805938720703,
+    "metadata_service_time": 0.006607770919799805,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 23:04:39,027",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition1",
+    "size": 5853,
+    "response_time": 0.05596780776977539,
+    "metadata_service_time": 0.025257110595703125,
+    "peer_id": "mictlanx-peer-1"
+}
+
+{
+    "timestamp": "2024-06-17 23:04:39,042",
+    "level": "INFO",
+    "logger_name": "client-0",
+    "thread_name": "MainThread",
+    "event": "GET",
+    "bucket_id": "jbddhwnqf606qgwr1ix42vayqmsl1ejl",
+    "key": "class_definition_code",
+    "size": 4580,
+    "response_time": 0.01465916633605957,
+    "metadata_service_time": 0.0054891109466552734,
+    "peer_id": "mictlanx-peer-1"
+}
+
