@@ -7,10 +7,13 @@ import string
 import time as T
 import os
 import humanfriendly as HF
+import cloudpickle as CP
+import json as J
 from nanoid import generate as nanoid
 from mictlanx.v4.summoner.summoner import Summoner ,SummonContainerPayload,ExposedPort
 from mictlanx.interfaces.payloads import MountX
 from mictlanx.logger.log import Log
+from activexendpoint.interfaces import Task
 
 AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
 MICTLANX_XOLO_MODE = os.environ.get("MICTLANX_XOLO_MODE","docker")
@@ -28,6 +31,34 @@ logger = Log(
     interval=AXO_LOGGER_INTERVAL,
 )
 
+def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
+    if len(multipart) == 3:
+        topic_bytes,op_bytes, metadata_bytes = multipart 
+        return Ok(Task(
+            topic     = topic_bytes.decode(encoding="utf-8"),
+            operation = op_bytes.decode(encoding="utf-8"),
+            metadata  = J.loads(metadata_bytes),
+            f         = bytearray()
+        ))
+    if len(multipart) == 4:
+        topic_bytes,op_bytes, metadata_bytes, fbytes = multipart 
+        return Ok(Task(
+            topic     = topic_bytes.decode(encoding="utf-8"),
+            operation = op_bytes.decode(encoding="utf-8"),
+            metadata  = J.loads(metadata_bytes),
+            f         = fbytes 
+        ))
+    if len(multipart) == 6:
+        topic_bytes,op_bytes, metadata_bytes, fbytes,fargs_bytes, fkwargs_bytes = multipart 
+        return Ok(Task(
+            topic     = topic_bytes.decode(encoding="utf-8"),
+            operation = op_bytes.decode(encoding="utf-8"),
+            metadata  = J.loads(metadata_bytes),
+            f         = CP.loads(fbytes),
+            fargs     = CP.loads(fargs_bytes),
+            fkwargs   = CP.loads(fkwargs_bytes)
+        ))
+    return Err(Exception("Multipart request is malformed"))
 # logger = logging.getLogger(AXO_ENDPOINT_ID)
 
 def byte_generator(data, chunk_size=1024)->Generator[bytes,Any,Any]:

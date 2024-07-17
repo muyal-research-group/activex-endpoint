@@ -91,12 +91,36 @@ def main2():
         obj = obj_result.unwrap()
         res = ActiveX.call(obj, method_name="to_chunks",chunk_size=1000, source_bucket_id="xxx")
         print("RES_CALL", res)
+def main3():
+    endpoint_manager = XoloEndpointManager()
+    endpoint_manager.add_endpoint(
+        endpoint_id= AXO_ENDPOINT_ID,
+        hostname=AXO_ENDPOINT_HOSTNAME,
+        protocol=AXO_ENDPOINT_PROTOCOL,
+        pubsub_port=AXO_ENDPOINT_PUBSUB_PORT,
+        req_res_port=AXO_ENDPOINT_REQ_RES_PORT
+    )
+    # axcm = ActiveXContextManager.local()
+    axcm = ActiveXContextManager.distributed(
+        endpoint_manager= endpoint_manager
+    )
+    obj_bytes = client.get_with_retry(
+        bucket_id="e6bye68q3t3c96p5dcos5jgqi1jx2miu",
+        key="rynbudw6ss0idqg5"
+    ).unwrap().value
+    obj_result = ActiveX.get_object_parts(obj_bytes,original_f=False)
+
+    # print("OBJ_RESULT", obj_result[0])
+    # if obj_result.is_ok:
+        # obj = obj_result.unwrap()
+        # res = ActiveX.call(obj, method_name="to_chunks",chunk_size=1000, source_bucket_id="xxx")
+        # print("RES_CALL", res)
 
     # print(obj_result.unwrap().encode_data_to_file(
     #     source_bucket_id = "xxx"
     # ))
     
 if __name__ == "__main__":
-    main2()
+    main3()
 
 

@@ -1,7 +1,24 @@
 from typing import Dict,Callable, Any,List
 import string
 from nanoid import generate as nanoid 
+import humanfriendly as HF
+import time as T
+import asyncio
 AnyFunctionType = Callable[..., any]
+
+class Heater:
+    def __init__(self,max_idle_time:str = "1h"):
+        self.start_time = T.time()
+        self.last_invocation = T.time()
+        self.max_idle_time = HF.parse_timespan(max_idle_time)
+        self.envent = asyncio.Event()
+        self.q = []
+    def warm(self,task_id:str=""):
+        self.q.append(task_id)
+        self.last_invocation = T.time()
+    def is_cold(self)->bool:
+        
+        return (T.time() - self.last_invocation)  >= self.max_idle_time
 class Task(object):
     def __init__(self,topic:str, operation:str, metadata:Dict[str,Any], f:AnyFunctionType,fargs:list= [],fkwargs:dict = {}):
         self.task_id = nanoid()

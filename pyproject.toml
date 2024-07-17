@@ -12,8 +12,9 @@ pyzmq = "^26.0.3"
 cloudpickle = "^3.0.0"
 aiofiles = "^23.2.1"
 # activex="0.0.21"
-mictlanx = "^0.0.156"
+mictlanx = "^0.0.157"
 activex = {path = "activex.tar.gz"}
+python-dotenv = "^1.0.1"
 [tool.poetry.group.dev.dependencies]
 pandas = "1.4.3"
 pytest = "^8.2.2"

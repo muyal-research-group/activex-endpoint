@@ -1,11 +1,10 @@
 import os
-# import string
+import time as T
 from nanoid import generate as nanoid
 from mictlanx.logger.log import Log
 import types
 import sys
 
-# AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
 AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH","/log")
 AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN","h")
 AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
@@ -14,7 +13,7 @@ logger = Log(
     console_handler_filter=lambda x: AXO_DEBUG,
     create_folder=True,
     error_log=True,
-    name="activex.dummy.class",
+    name="activex.module.management",
     path=AXO_LOGGER_PATH,
     when=AXO_LOGGER_WHEN,
     interval=AXO_LOGGER_INTERVAL,
@@ -50,9 +49,12 @@ class Dummy:
             self.__dict__['attributes'][name] = value
 
 
+
+
 def add_dummy_module(module_path, class_name, dummy_class=None):
+    start_time = T.time()
     logger.debug({
-        "event":"ADD.MODULE.BEFORE",
+        "event":"ADD.MODULE",
         "module":module_path,
         "name":class_name,
         "class":str(dummy_class),
@@ -83,10 +85,11 @@ def add_dummy_module(module_path, class_name, dummy_class=None):
     parent_module_path = '.'.join(parts[:-1])
     if parent_module_path:
         setattr(sys.modules[parent_module_path], module_name, final_module)
-    logger.debug({
-        "event":"ADD.MODULE.AFTER",
+    logger.info({
+        "event":"ADD.MODULES",
         "module":module_path,
         "name":class_name,
         "class":str(dummy_class),
-        "modules":len(sys.modules)
+        "modules":len(sys.modules),
+        "response_time":T.time() - start_time
     })

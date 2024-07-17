@@ -1,145 +1,67 @@
-# import aiofiles.os
-from activex import ActiveX
-import zmq.asyncio 
-import string
-import activexendpoint.utils as U
+import os 
 import sys
 import time as T
-import os 
-import cloudpickle as CP
-import json as J
-import humanfriendly as HF
-from typing import List,Dict,Any,Callable,Tuple
-import logging
 import asyncio
-from concurrent.futures import ProcessPoolExecutor,ThreadPoolExecutor
-
-from abc import ABC,abstractmethod
-from option import Result,Ok,Err,Option,Some,NONE
+import zmq.asyncio 
+import humanfriendly as HF
+from dotenv import load_dotenv
+from option import Result,Ok,Err,Some,NONE
+from nanoid import generate as nanoid
+# Activex 
 from activex.endpoint import XoloEndpointManager,DistributedEndpoint
-from activex.storage.metadata import MetadataX
-from activexendpoint.dummy import add_dummy_module, Dummy
-from activexendpoint.utils import install_packages,deploy_endpoint
-from mictlanx.v4.interfaces.responses import GetBytesResponse,GetMetadataResponse
+from activex.contextmanager import ActiveXContextManager
+from activex.runtime.local import LocalRuntime
+from activex.storage.data import MictlanXStorageService
+# Mictlanx
 from mictlanx.v4.client import Client
 from mictlanx.utils.index import Utils as MictlanXUtils
-from nanoid import generate as nanoid
 from mictlanx.v4.summoner.summoner import Summoner
 from mictlanx.logger.tezcanalyticx.tezcanalyticx import TezcanalyticXParams
-from activexendpoint.store import LocalKVStore
-from activexendpoint.interfaces import Task
 from mictlanx.logger.log import Log
-from dotenv import load_dotenv
-
+# ActivexEndpoitn
+from activexendpoint.controllers import put_metadata,method_exeution,add_code
+from activexendpoint.utils import install_packages,deploy_endpoint
+import activexendpoint.utils as U
+from activexendpoint.store import LocalKVStore
+from activexendpoint.interfaces import Task,Heater
+from activexendpoint.serde import DefaultSerde
+import activexendpoint.constants as CONSTANTS
 ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH",-1)
 if not ENV_FILE_PATH == -1:
     load_dotenv(ENV_FILE_PATH)
 
 
-AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
-AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH","/log")
-AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN","h")
-AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
-AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG","1")))
-AXO_SINK_PATH = os.environ.get("AXO_SINK_PATH","/sink")
-AXO_SOURCE_PATH = os.environ.get("AXO_SOURCE_PATH","/source")
-AXO_DATA_PATH = os.environ.get("AXO_DATA_PATH","/data")
-# AXO_DATA_PATH = os.environ.get("AXO_DATA_PATH","/data")
-
-loop = asyncio.get_event_loop()
-asyncio.set_event_loop(loop=loop)
-
-
-
-class Serde(ABC):
-    def __init__(self):
-        pass
-    @abstractmethod
-    def serialize(self,axo:ActiveX)->Result[bytes, Exception]:
-        pass
-    @abstractmethod
-    def deserialize(self,x:bytes)->Result[ActiveX, Exception]:
-        pass
-
-class DefaultSerde(Serde):
-    def __init__(self):
-        super().__init__()
-    def serialize(self,axo:ActiveX)->Result[bytes,Exception]:
-        try:
-            return Ok(axo.to_bytes())
-            # return Ok(CP.dumps(axo))
-        except Exception as e:
-            return Err(e)
-    def deserialize(self, x: bytes)->Result[ActiveX, Exception]:
-        try:
-            return ActiveX.from_bytes(x)
-            # return Ok(CP.loads(x))
-        except Exception as e:
-            return Err(e)
-    def serialize_fresult(self,result:Any)->Result[Tuple[int, bytes],Exception]:
-        try:
-            x = J.dumps(result)
-            return Ok((0,x.encode()))
-        except Exception as e:
-            try: 
-                x = CP.dumps(result)
-                return Ok((1,x))
-            except Exception as e:
-                return Err(e)
-   
-
-def serialize_fresult(result:Any)->bytes:
-    try:
-        x = J.dumps(result)
-        return x.encode()
-    except Exception as e:
-        return CP.dumps(result)
-serde = DefaultSerde()
-
-logger = Log(
-    console_handler_filter=lambda x: AXO_DEBUG,
-    create_folder=True,
-    error_log=True,
-    name=AXO_ENDPOINT_ID,
-    path=AXO_LOGGER_PATH,
-    when=AXO_LOGGER_WHEN,
-    interval=AXO_LOGGER_INTERVAL,
-)
-
-
-AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
-AXO_ENDPOINT_DEPENDENCIES = os.environ.get("AOX_ENDPOINT_DEPENDENCIES","")
-AXO_ENDPOINT_DEPENDENCIES  = list(filter(lambda x: len(x) >0,  AXO_ENDPOINT_DEPENDENCIES.split(";")))
-AXO_PROTOCOL =  os.environ.get("AXO_PROTOCOL","tcp")
-AXO_PUB_SUB_PORT     = int(os.environ.get("AXO_PUB_SUB_PORT",16666))
-AXO_REQ_RES_PORT     = int(os.environ.get("AXO_REQ_RES_PORT",16667))
-AXO_HOSTNAME = os.environ.get("AXO_HOSTNAME","127.0.0.1")
-AXO_SUBSCRIBER_HOSTNAME = os.environ.get("AXO_SUBSCRIBER_HOSTNAME","*")
-AXO_ENDPOINTS = os.environ.get("AXO_ENDPOINTS","").split(" ")
-AXO_ENDPOINTS = list(filter(lambda x: len(x)>0, AXO_ENDPOINTS))
-endpoints_global = list(map(lambda x : DistributedEndpoint.from_str(endpoint_str=x), AXO_ENDPOINTS))
-endpoints_global_dict = dict(list(map(lambda e: (e.endpoint_id, e), endpoints_global )))
-endpoint_manager = XoloEndpointManager(endpoint_id=AXO_ENDPOINT_ID,endpoints=endpoints_global_dict)
-endpoint_manager.add_endpoint(
-    endpoint_id=AXO_ENDPOINT_ID,
-    hostname=AXO_HOSTNAME,
-    protocol=AXO_PROTOCOL,
-    pubsub_port=AXO_PUB_SUB_PORT,
-    req_res_port=AXO_REQ_RES_PORT
-)
-
-
-MICTLANX_XOLO_IP_ADDR = os.environ.get("MICTLANX_XOLO_IP_ADDR","localhost")
-MICTLANX_XOLO_API_VERSION =  os.environ.get("MICTLANX_XOLO_API_VERSION","3")
-MICTLANX_XOLO_NETWORK = os.environ.get("MICTLANX_XOLO_NETWORK","10.0.0.0/25")
-MICTLANX_XOLO_PORT = os.environ.get("MICTLANX_XOLO_PORT","15000")
-MICTLANX_XOLO_PROTOCOL = os.environ.get("MICTLANX_XOLO_PROTOCOL","http")
-MICTLANX_XOLO_MODE = os.environ.get("MICTLANX_XOLO_MODE","docker")
+AXO_ENDPOINT_ID               = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
+AXO_LOGGER_PATH               = os.environ.get("AXO_LOGGER_PATH","/log")
+AXO_LOGGER_WHEN               = os.environ.get("AXO_LOGGER_WHEN","h")
+AXO_LOGGER_INTERVAL           = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
+AXO_DEBUG                     = bool(int(os.environ.get("AXO_DEBUG","1")))
+AXO_SINK_PATH                 = os.environ.get("AXO_SINK_PATH","/sink")
+AXO_SOURCE_PATH               = os.environ.get("AXO_SOURCE_PATH","/source")
+AXO_DATA_PATH                 = os.environ.get("AXO_DATA_PATH","/data")
+AXO_ENDPOINT_IMAGE            = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
+AXO_ENDPOINT_DEPENDENCIES_STR = os.environ.get("AOX_ENDPOINT_DEPENDENCIES","")
+AXO_ENDPOINT_DEPENDENCIES     = list(filter(lambda x: len(x) >0,  AXO_ENDPOINT_DEPENDENCIES_STR.split(";")))
+AXO_PROTOCOL                  = os.environ.get("AXO_PROTOCOL","tcp")
+AXO_PUB_SUB_PORT              = int(os.environ.get("AXO_PUB_SUB_PORT",16666))
+AXO_REQ_RES_PORT              = int(os.environ.get("AXO_REQ_RES_PORT",16667))
+AXO_HOSTNAME                  = os.environ.get("AXO_HOSTNAME","127.0.0.1")
+AXO_SUBSCRIBER_HOSTNAME       = os.environ.get("AXO_SUBSCRIBER_HOSTNAME","*")
+AXO_ENDPOINTS_STR             = os.environ.get("AXO_ENDPOINTS","").split(" ")
+AXO_ENDPOINTS                 = list(filter(lambda x: len(x)>0, AXO_ENDPOINTS_STR))
+AXO_HEATER_MAX_IDLE_TIME      = os.environ.get("AXO_HEATER_MAX_IDLE_TIME","1h")
+# 
+MICTLANX_XOLO_IP_ADDR         = os.environ.get("MICTLANX_XOLO_IP_ADDR","localhost")
+MICTLANX_XOLO_API_VERSION     = os.environ.get("MICTLANX_XOLO_API_VERSION","3")
+MICTLANX_XOLO_NETWORK         = os.environ.get("MICTLANX_XOLO_NETWORK","10.0.0.0/25")
+MICTLANX_XOLO_PORT            = os.environ.get("MICTLANX_XOLO_PORT","15000")
+MICTLANX_XOLO_PROTOCOL        = os.environ.get("MICTLANX_XOLO_PROTOCOL","http")
+MICTLANX_XOLO_MODE            = os.environ.get("MICTLANX_XOLO_MODE","docker")
 
 MICTLANX_BUCKET_ID = os.environ.get("MICTLANX_BUCKET_ID","activex")
-MICTLANX_ROUTERS = os.environ.get("MICTLANX_ROUTERS","mictlanx-router-0:localhost:60666")
+MICTLANX_ROUTERS   = os.environ.get("MICTLANX_ROUTERS","mictlanx-router-0:localhost:60666")
 
-routers = list(MictlanXUtils.routers_from_str(routers_str=MICTLANX_ROUTERS, separator=" "))
+routers                  = list(MictlanXUtils.routers_from_str(routers_str=MICTLANX_ROUTERS, separator=" "))
 MICTLANX_CLIENT_ID       = os.environ.get("MICTLANX_CLIENT_ID", "activex-mictlanx-0")
 MICTLANX_DEBUG           = bool(int(os.environ.get("MICTLANX_DEBUG","0")))
 MICTLANX_LOG_INTERVAL    = int(os.environ.get("MICTLANX_LOG_INTERVAL","24"))
@@ -154,20 +76,10 @@ TEZCANALYTICX_LEVEL         = int(os.environ.get("TEZCANALYTICX_LEVEL","0"))
 TEZCANALYTICX_PATH          = os.environ.get("TEZCANALYTICX_PATH","/api/v4/events")
 TEZCANALYTICX_PORT          = int(os.environ.get("TEZCANALYTICX_PORT","45000"))
 TEZCANALYTICX_PROTOCOL      = os.environ.get("TEZCANALYTICX_PROTOCOL","http")
-from activex.contextmanager import ActiveXContextManager
-from activex.runtime.local import LocalRuntime
-from activex.storage.data import MictlanXStorageService
-
-mictlanx_client          = Client(
-    client_id       = MICTLANX_CLIENT_ID,
-    bucket_id       = MICTLANX_BUCKET_ID,
-    debug           =  MICTLANX_DEBUG,
-    log_interval    = MICTLANX_LOG_INTERVAL,
-    log_when        = MICTLANX_LOG_WHEN,
-    log_output_path = MICTLANX_LOG_OUTPUT_PATH,
-    max_workers     = MICTLANX_MAX_WORKERS,
-    routers              = routers, 
-    tezcanalyticx_params = Some(
+TEZCANALYTICX_ENABLED       = bool(int(os.environ.get("TEZCANALYTICS_ENABLED","0")))
+# _____________________________________________________
+if TEZCANALYTICX_ENABLED:
+    TEZCANALYTICX = Some(
         TezcanalyticXParams(
             flush_timeout= TEZCANALYTICX_FLUSH_TIMEOUT,
             buffer_size=TEZCANALYTICX_BUFFER_SIZE,
@@ -178,7 +90,50 @@ mictlanx_client          = Client(
             protocol=TEZCANALYTICX_PROTOCOL
         )
     ) 
+else:
+    TEZCANALYTICX = NONE
+loop = asyncio.get_event_loop()
+asyncio.set_event_loop(loop=loop)
+
+
+serde = DefaultSerde()
+
+logger = Log(
+    console_handler_filter=lambda x: AXO_DEBUG,
+    create_folder=True,
+    error_log=True,
+    name=AXO_ENDPOINT_ID,
+    path=AXO_LOGGER_PATH,
+    when=AXO_LOGGER_WHEN,
+    interval=AXO_LOGGER_INTERVAL,
 )
+
+
+endpoints_global = list(map(lambda x : DistributedEndpoint.from_str(endpoint_str=x), AXO_ENDPOINTS))
+endpoints_global_dict = dict(list(map(lambda e: (e.endpoint_id, e), endpoints_global )))
+endpoint_manager = XoloEndpointManager(endpoint_id=AXO_ENDPOINT_ID,endpoints=endpoints_global_dict)
+endpoint_manager.add_endpoint(
+    endpoint_id=AXO_ENDPOINT_ID,
+    hostname=AXO_HOSTNAME,
+    protocol=AXO_PROTOCOL,
+    pubsub_port=AXO_PUB_SUB_PORT,
+    req_res_port=AXO_REQ_RES_PORT
+)
+
+
+
+mictlanx_client          = Client(
+    client_id            = MICTLANX_CLIENT_ID,
+    bucket_id            = MICTLANX_BUCKET_ID,
+    debug                = MICTLANX_DEBUG,
+    log_interval         = MICTLANX_LOG_INTERVAL,
+    log_when             = MICTLANX_LOG_WHEN,
+    log_output_path      = MICTLANX_LOG_OUTPUT_PATH,
+    max_workers          = MICTLANX_MAX_WORKERS,
+    routers              = routers,
+    tezcanalyticx_params = TEZCANALYTICX
+)
+
 axcm = ActiveXContextManager(
     runtime= LocalRuntime(
         storage_service=Some(
@@ -195,384 +150,26 @@ summoner = Summoner(
     protocol    = MICTLANX_XOLO_PROTOCOL
 )
 
-ERROR_STATUS_INT = -1
-number_of_bytes  = 4
-ERROR_STATUS     = ERROR_STATUS_INT.to_bytes(byteorder="little",length=number_of_bytes,signed=True)
-# 
-SUCCESS_STATUS_INT = 0
-SUCCESS_STATUS     = SUCCESS_STATUS_INT.to_bytes(byteorder="little",length=number_of_bytes,signed=True)
 
 
 install_packages(packages=AXO_ENDPOINT_DEPENDENCIES)
 
 
 context = zmq.asyncio.Context()
-# pub_sub_socket = context.socket(zmq.SUB)
 req_rep_socket = context.socket(zmq.REP)
-# pub_sub_socket.setsockopt(zmq.SUBSCRIBE,b"activex")
 
 
 AXO_PUB_SUB_URI =  AXO_HOSTNAME if AXO_PUB_SUB_PORT == -1 else "{}:{}".format(AXO_SUBSCRIBER_HOSTNAME,AXO_PUB_SUB_PORT)
 AXO_REQ_RES_URI =  AXO_HOSTNAME if AXO_REQ_RES_PORT == -1 else "{}:{}".format(AXO_HOSTNAME,AXO_REQ_RES_PORT)
-
-# waiting = float(os.environ.get("ACTIVEX_MIDDLEWARE_WAITING_TIME","1"))
-
-# pub_sub_socket.connect("{}://{}".format(AXO_PROTOCOL,AXO_PUB_SUB_URI))
 req_rep_socket.bind("{}://{}".format(AXO_PROTOCOL,AXO_REQ_RES_URI))
 
 
 
-class Heater:
-    def __init__(self,max_idle_time:str = "10m"):
-        self.start_time = T.time()
-        self.last_invocation = T.time()
-        self.max_idle_time = HF.parse_timespan(max_idle_time)
-        self.envent = asyncio.Event()
-        self.q = []
-    def warm(self,task_id:str=""):
-        self.q.append(task_id)
-        self.last_invocation = T.time()
-    def is_cold(self)->bool:
         
-        return (T.time() - self.last_invocation)  >= self.max_idle_time
-        
-h = Heater()
-
-local_kv = LocalKVStore()
-
-
-# Define a type hint for any callable
-
-# Must be refactor as soon as possible
-def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
-    if len(multipart) == 3:
-        topic_bytes,op_bytes, metadata_bytes = multipart 
-        return Ok(Task(
-            topic     = topic_bytes.decode(encoding="utf-8"),
-            operation = op_bytes.decode(encoding="utf-8"),
-            metadata  = J.loads(metadata_bytes),
-            f         = bytearray()
-        ))
-    if len(multipart) == 4:
-        topic_bytes,op_bytes, metadata_bytes, fbytes = multipart 
-        return Ok(Task(
-            topic     = topic_bytes.decode(encoding="utf-8"),
-            operation = op_bytes.decode(encoding="utf-8"),
-            metadata  = J.loads(metadata_bytes),
-            f         = fbytes 
-        ))
-    if len(multipart) == 6:
-        topic_bytes,op_bytes, metadata_bytes, fbytes,fargs_bytes, fkwargs_bytes = multipart 
-        return Ok(Task(
-            topic     = topic_bytes.decode(encoding="utf-8"),
-            operation = op_bytes.decode(encoding="utf-8"),
-            metadata  = J.loads(metadata_bytes),
-            f         = CP.loads(fbytes),
-            fargs     = CP.loads(fargs_bytes),
-            fkwargs   = CP.loads(fkwargs_bytes)
-        ))
-    return Err(Exception("Multipart request is malformed"))
-
-
-
-
-async def put_metadata(metadata:Dict[str,Any])->Result[str, Exception]:
-    start_time = T.time()
-    axo_key        = metadata.get("axo_key", -1)
-
-    if axo_key == -1:
-        error_obj = {"key":axo_key,"detail":"Malformed request: It does not contain id field."}
-        await req_rep_socket.send_multipart([b"activex",b"BAD.REQUEST", J.dumps(error_obj).encode() ])
-        logger.error("{} {}".format("BAD.REQUEST",axo_key))
-        return Err(Exception(error_obj.get("detail","Uknown error")))
-        # continue
-    if local_kv.exists(key=axo_key):
-        error_obj = {"key":axo_key, "detail":"{} already exists".format(axo_key)}
-        await req_rep_socket.send_multipart([b"activex",b"ALREADY.EXISTS", J.dumps(error_obj).encode() ])
-        logger.error("{} {}".format("ALREADY.EXISTS",axo_key))
-        return Err(Exception(error_obj.get("detail","Uknown error")))
-    
-    local_kv.put(key=axo_key, value= metadata)
-    rt = T.time() - start_time
-    logger.info({
-        "event":"PUT.METADATA",
-        "key":axo_key,
-        **metadata,
-        "response_time":rt
-    })
-        # "{} {} {}".format("PUT.METADATA",key,rt))
-    return Ok(axo_key)
-
-
-
-
-# def valid_axo_key(task)
-
-async def method_execution(task:Task)->Result[Any, Exception]:
-    start_time       = T.time()
-    axo_key          = task.get_axo_key()
-    axo_bucket_id    = task.get_axo_bucket_id()
-    source_bucket_id = task.get_source_bucket_id()
-    sink_bucket_id   = task.get_sink_bucket_id()
-
-    try:
-        # axo_key validation _______________________________________________________________________________________
-        if axo_key == -1:
-            error_msg = "Key not found in metadata"
-            logger.error({
-                "msg":error_msg,
-                "operation":"METHOD.EXEC"
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-            return Err(Exception(error_msg))
-        # _______________________________________________________________________________________
-
-        # _______________________________________________________________________________________
-        maybe_mictlanx_metadata = local_kv.get(key=axo_key)
-        if maybe_mictlanx_metadata.is_none:
-            logger.warning({
-                "event":"LOCAL.NOT.FOUND",
-                "axo_bucket_id":axo_bucket_id,
-                "key":axo_key,
-            })
-            get_metadata_start_time = T.time()
-            get_metadata_result:Result[GetMetadataResponse, Exception]= mictlanx_client.get_metadata(
-                key       = axo_key,
-                bucket_id = axo_bucket_id
-            ).result()
-            
-            # Check if get_metadata got an error_____________________________________________
-            if get_metadata_result.is_err:
-                error_msg = "{} not found".format(axo_key)
-                logger.error({
-                    "event":"GET.METADATA.FAILED",
-                    "error":error_msg,
-                    "axo_bucket_id":axo_bucket_id,
-                    "key":axo_key
-                })
-                await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-                return Err(Exception(error_msg))
-            # _______________________________________________________________________________________
-
-            remote_metadata = get_metadata_result.unwrap()
-            logger.info({
-                "event":"GET.REMOTE.METADATA",
-                "bucket_id":axo_bucket_id,
-                "key":axo_key,
-                "response_time":T.time() - get_metadata_start_time
-            })
-            await put_metadata(metadata=remote_metadata.metadata.tags)
-            maybe_mictlanx_metadata = Some(remote_metadata.metadata.tags)
-        
-        local_metadata = maybe_mictlanx_metadata.unwrap()
-        module         = local_metadata.get("module",-1)
-        name           = local_metadata.get("name",-1)
-        # add_dummy_module(module, name, Dummy)
-        # _______________________________________________________________________________________
-        if module == -1 or name == -1:
-            error_msg = "module or name attribute not found in tags"
-            logger.error({
-                "event":"MODULE.OR.NAME.NOT.FOUND",
-                "msg":error_msg,
-                "bucket_id":axo_bucket_id,
-                "key":axo_key,
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-            return Err(Exception(error_msg))
-        # _______________________________________________________________________________________
-        mictlanx_get_start_time =  T.time()
-
-        obj_result_get_response :Result[GetBytesResponse,Exception]= mictlanx_client.get_with_retry(
-            bucket_id=axo_bucket_id,
-            key=axo_key
-        )
-
-        
-        # _______________________________________________________________________________________
-        if obj_result_get_response.is_err:
-            error_msg = "get_to_file failed"
-            logger.error({
-                "msg":error_msg, 
-                "bucket_id":axo_bucket_id,
-                "key":axo_key
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-            return Err(Exception(error_msg))
-        # _______________________________________________________________________________________
-        get_obj_response = obj_result_get_response.unwrap()
-        obj_bytes        = get_obj_response.value
-        logger.info({
-            "event":"GET.OBJECT.REMOTE",
-            "bucket_id":axo_bucket_id,
-            "key":axo_key,
-            "storage_service":"mictlanx",
-            "response_time":T.time() - mictlanx_get_start_time
-        })
-        # _______________________________________________________________________________________
-        des_start_time = T.time()
-        obj_resul              =serde.deserialize(obj_bytes)
-        if obj_resul.is_err:
-            error_msg = "DESERIALIZED.FAILED"
-            logger.error({
-                "event":error_msg,
-                "bucket_id":axo_bucket_id,
-                "key":axo_key,
-                "msg":str(obj_resul.unwrap_err())
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-            return Err(Exception(error_msg))
-        # _______________________________________________________________________________________
-
-        obj = obj_resul.unwrap()
-        logger.info({
-            "event":"DESERALIZATION",
-            "bucket_id":axo_bucket_id,
-            "key":axo_key,
-            "response_time":T.time() - des_start_time
-        })
-        # ____________________________________________________
-        logger.debug({
-            "event":"GET.SOURCE.DATA",
-            "axo_source_bucket_id":source_bucket_id,
-        })
-        # Pattern
-        # Get bucket
-        axo_sink_path_source_bucket_id_path = "{}/{}".format(AXO_SINK_PATH,source_bucket_id)
-        axo_sink_path_sink_bucket_id_path   = "{}/{}".format(AXO_SINK_PATH,sink_bucket_id)
-        os.makedirs(axo_sink_path_sink_bucket_id_path,exist_ok=True)
-
-        bucket_metadata_gen = mictlanx_client.get_all_bucket_metadata(bucket_id=source_bucket_id)
-        result_json = {
-            "successed_balls":0,
-            "failed_balls":0,
-            "response_time":0
-        }
-        # for source_ball_local_path in source_bucket_files:
-        fname = task.metadata.get("fname",task.f.__name__)
-        skip_balls = []
-        for router_response in bucket_metadata_gen:
-            for ball in router_response.balls:
-                status = -1
-                combined_key = "{}@{}".format(ball.bucket_id, ball.key)
-                if combined_key in skip_balls:
-                    logger.debug({
-                        "event":"SKIP.BALL",
-                        "bucket_id":ball.bucket_id,
-                        "key":ball.key,
-                        "status":status
-                    })
-                    continue
-                axo_sink_key  = nanoid(alphabet=string.ascii_lowercase+string.digits,size=16)
-                axo_sink_path = "{}/{}".format(axo_sink_path_sink_bucket_id_path,axo_sink_key)
-                axo_result_id = "{}.{}.{}".format(fname,sink_bucket_id ,axo_sink_key )
-                fkwargs = {
-                    **task.fkwargs,
-                    "axo_result_id":axo_result_id,
-                    "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
-                    "axo_sink_path":axo_sink_path,
-                    "axo_sink_key":axo_sink_key,
-                    "source_bucket_id":ball.bucket_id,
-                    "source_key":ball.key,
-                    "method_name":fname,
-                    "metadata":ball.tags,
-                    "mictlanx":axcm.runtime.storage_service
-                }
-                t_call_start = T.time()
-                res = ActiveX.call(*task.fargs,instance=obj,**fkwargs)
-                if res.is_ok:
-                    logger.info({
-                        "event":"METHOD.CALL",
-                        "method_name":fname,
-                        "axo_result_id":axo_result_id,
-                        "axo_sink_path":axo_sink_path,
-                        "axo_sink_key":axo_sink_key,
-                        "source_bucket_id":ball.bucket_id,
-                        "source_key":ball.key,
-                        "response_time":T.time() -  t_call_start
-                    })
-                    res = res.unwrap()
-                    if not res == None:
-                        (f_serialize_mode,f_result_bytes)= serde.serialize_fresult(result=res).unwrap()
-                        axo_fsink_key = nanoid(alphabet=string.ascii_lowercase+string.digits, size=16)
-                        result_json[axo_result_id] = f_result_bytes.decode() if f_serialize_mode == 0 else axo_fsink_key
-                        put_result   = mictlanx_client.put_chunked(
-                            chunks=U.byte_generator(f_result_bytes),
-                            bucket_id=sink_bucket_id,
-                            key=axo_fsink_key,
-                            tags={
-                                "method_name":fname,
-                                "axo_result_id":axo_result_id,
-                                "axo_sink_path":axo_sink_path,
-                                "axo_sink_key":axo_sink_key,
-                                "source_bucket_id":ball.bucket_id,
-                                "source_key":ball.key,
-                            }
-                        )
-                        if put_result.is_err:
-                            fbs = result_json.setdefault("failed_balls",0)
-                            result_json["failed_balls"] = fbs +1
-                            logger.error({
-                                "event":"PUT.CHUNKED.FAILED",
-                                "bucket_id":axo_bucket_id,
-                                "key":axo_fsink_key,
-                            })
-                        else:
-                            status = 1 
-                            fbs = result_json.setdefault("successed_balls",0)
-                            result_json["successed_balls"] = fbs +1
-                    else:
-                        logger.warning({
-                            "event":"METHOD.EXEC.NO.OUTPUT",
-                            "axo_source_bucket_id":source_bucket_id,
-                            # "axo_source_path":source_ball_local_path,
-                            "axo_sink_bucket_id":sink_bucket_id,
-                            "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
-                            "axo_sink_path":axo_sink_path,
-                            "axo_sink_key":axo_sink_key,
-                            "response_time": T.time()- start_time
-                        })
-                        
-                        # raise Exception("{} execution failed".format(fname))
-                else:
-                    logger.error({
-                        "event":"METHOD.EXCUTION.FAILED",
-                        "reason":str(res.unwrap_err())
-                    })
-                
-
-                if status == 0:
-                    skip_balls.append(combined_key)
-
-                    # continue
-
-        logger.info({
-            "event":"METHOD.EXEC.COMPLETED",
-            "method_name":fname,
-            "axo_source_bucket_id":source_bucket_id,
-            # "axo_source_path":source_ball_local_path,
-            "axo_sink_bucket_id":sink_bucket_id,
-            # "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
-            # "axo_sink_path":axo_sink_path,
-            # "axo_sink_key":axo_sink_key,
-            "response_time": T.time()- start_time
-        })
-        result_json["response_time"] = T.time()- start_time
-        result_metadata = J.dumps({}).encode(encoding="utf-8")
-        result_bytes = J.dumps(result_json).encode()
-        await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",SUCCESS_STATUS,result_metadata, result_bytes])
-    except Exception as e:
-        error_msg = "Uknown error"
-        logger.error({
-            "event":"METHDO.EXECUTION.FAILED",
-            "msg":error_msg,
-            "raw_error":str(e)
-        })
-        await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",ERROR_STATUS,b"{}",b""])
-        return Err(Exception(error_msg))
-
-
-
-
+heater = Heater(
+    max_idle_time= AXO_HEATER_MAX_IDLE_TIME
+)
+store = LocalKVStore()
 
 
 
@@ -585,13 +182,13 @@ async def main_req_rep():
         try:
             _start_time = T.time()
             multipart   = await req_rep_socket.recv_multipart()
-            msg_result  = from_multipart_to_task(multipart=multipart)
+            msg_result  = U.from_multipart_to_task(multipart=multipart)
 
             if msg_result.is_err:
                 logger.error({
                     "msg":str(msg_result.unwrap_err())
                 })
-                await req_rep_socket.send_multipart([b"activex",b"REQUEST.FAILED",ERROR_STATUS,b"{}",b""])
+                await req_rep_socket.send_multipart([b"activex",b"REQUEST.FAILED",CONSTANTS.ERROR_STATUS,b"{}",b""])
                 continue
             task = msg_result.unwrap()
             logger.debug({
@@ -603,145 +200,74 @@ async def main_req_rep():
                 "source_bucket_id":task.get_source_bucket_id(),
                 "sink_bucket_id":task.get_sink_bucket_id(),
                 "endpoint_id":task.get_endpoint_id(),
-                "dependencies":task.get_dependencies()
+                "dependencies":task.get_dependencies(),
             })
-            if h.is_cold():
+            if heater.is_cold():
                 logger.warning({
                     "event":"DRAIN.ENDPOINT",
                     "msg":"max_idle_timeout reached",
-                    "max_idle_timeout":HF.format_timespan(h.max_idle_time),
+                    "max_idle_timeout":HF.format_timespan(heater.max_idle_time),
                 })
                 sys.exit(0)
             
 
-            topic       = task.topic
+            # topic       = task.topic
             operation   = task.operation
-            metadata    = task.metadata
+            # metadata    = task.metadata
 
             if operation =="PUT.METADATA":
-                h.warm(task_id=task.task_id)
-                # __________________________________________
-                # Paso magico musical
-                dependencies = task.get_dependencies()
-                install_packages(packages=dependencies)
-                # __________________________________________
-                endpoint_id:str = metadata.get("endpoint_id",task.get_endpoint_id())
-                exists          = endpoint_manager.exists(endpoint_id=endpoint_id)
-                logger.debug({
-                    "event":"ENDPOINT.MANAGER",
-                    "endpoints":str(endpoint_manager.endpoints),
-                    "endpoint_id":AXO_ENDPOINT_ID,
-                    "current_endpoint_id":endpoint_id,
-                    "size":len(endpoint_manager.endpoints),
-                    "exists":exists
-                })
-                if not exists:
-                    deploy_endpoint_start_time = T.time()
-                    pubsub_port = endpoint_manager.get_available_pubsub_port()
-                    req_res_port= endpoint_manager.get_available_req_res_port()
-                    logger.debug({
-                        "event":"DEPLOY.ENDPOINT",
-                        "endpoint_id":endpoint_id,
-                        "pubsub_port":pubsub_port,
-                        "req_res_port":req_res_port
+                response = await put_metadata(
+                    req_rep_socket= req_rep_socket,
+                    h = heater,
+                    endpoint_manager=endpoint_manager,
+                    summoner=summoner,
+                    task=task,
+                    store=store
+                )
+                print("PUT.RESPONSE_RESPONSE",response)
+                if response.is_ok:
+                    print("PUT.METADATa.RESULT", response)
+                else:
+                    logger.error({
+                        "event":"PUT.METADATA.FAILED",
+                        "error":str(response.unwrap_err())
                     })
-                    res_xolo = deploy_endpoint(
-                        summoner=summoner,
-                        endpoint_id=endpoint_id,
-                        pubsub_port=pubsub_port,
-                        req_res_port=req_res_port,
-                        dependencies=dependencies,
-                        image=AXO_ENDPOINT_IMAGE
-
-                    )
-                    if res_xolo.is_ok:
-                        response_xolo_endpoint = res_xolo.unwrap()
-                        endpoint_manager.add_endpoint(
-                            endpoint_id=endpoint_id,
-                            hostname=response_xolo_endpoint.ip_addr,
-                            req_res_port=req_res_port,
-                            pubsub_port=pubsub_port
-                        )
-                        logger.info({
-                            "event":"DEPLOY.ENDPOINT",
-                            "endpoint_id":endpoint_id,
-                            "response_time":T.time() - deploy_endpoint_start_time
-                        })
-                    else:
-                        logger.error({
-                            "error":"DEPLOY.ENDPOINT.FAILED",
-                            "msg":str(res_xolo.unwrap_err()),
-                            "endpoint_id":endpoint_id,
-                            "req_res_port":req_res_port,
-                            "pubsub_port":pubsub_port
-                        })
-
-                if endpoint_id != AXO_ENDPOINT_ID:
-                    endpointx = endpoint_manager.get_endpoint(endpoint_id=endpoint_id)
-                    key = metadata.get("id","")
-                    res = endpointx.put(key=key, metadata=MetadataX(
-                        **metadata
-                    ))
-                    if res.is_ok:
-                        logger.info({
-                            "event":"PUT.METADATA.COMPLETED",
-                            **metadata,
-                            "response_time":T.time() - _start_time
-                        })
-                        await req_rep_socket.send_multipart([b"activex",b"PUT.METADATA.SUCCESSED",SUCCESS_STATUS,b"{}",key.encode() ])
-                    raise Exception("{} fail to put.metadata {}".format(endpoint_id, key))
-                else: 
-                # __________________________________________
-                    _result = (await put_metadata(metadata=metadata))
-                    if _result.is_ok:
-                        response = _result.unwrap()
-                        logger.info({
-                            "event":"PUT.METADATA.COMPLETED",
-                            **metadata,
-                            "response_time":T.time() - _start_time
-                        })
-                        await req_rep_socket.send_multipart([b"activex",b"PUT.METADATA.SUCCESSED",SUCCESS_STATUS,b"{}",response.encode()])
-                        continue
-                    else:
-                        await req_rep_socket.send_multipart([b"activex",b"PUT.METADATA.FAILED",ERROR_STATUS,b"{}",b""])
-
-
+            elif operation == "ADD.CODE":
+                res = add_code(
+                    req_rep_socket= req_rep_socket,
+                    h = heater,
+                    endpoint_manager=endpoint_manager,
+                    summoner=summoner,
+                    task=task,
+                    store=store
+                )
+                print("RES", res)
             elif operation =="METHOD.EXEC":
-                h.warm(task_id=task.task_id)
-                dependencies = task.get_dependencies()
-                logger.debug({
-                    "event":"DEPENDENCIES.SHOW",
-                    "dependencies":dependencies
-                })
-                install_packages(packages=dependencies)
-
-                endpoint_id = task.get_endpoint_id()
-                exists      = endpoint_manager.exists(endpoint_id=endpoint_id)
-
-                logger.debug({
-                    "event":"ENDPOINT.MANAGER",
-                    "endpoints":str(endpoint_manager.endpoints),
-                    "endpoint_id":AXO_ENDPOINT_ID,
-                    "current_endpoint_id":endpoint_id,
-                    "size":len(endpoint_manager.endpoints),
-                    "exists":exists
-                })
-                result = await method_execution(task)
-                continue
+                res = await method_exeution(
+                    store=store,
+                    req_rep_socket=req_rep_socket,
+                    serde=serde,
+                    storage_service=mictlanx_client,
+                    endpoint_manager=endpoint_manager,
+                    heater=heater,
+                    task=task
+                )
+                print("METHOD_EXECUTION",res)
+                # continue
             elif operation =="PING":
-                h.warm(task_id=task.task_id)
+                heater.warm(task_id=task.task_id)
                 logger.debug({
                     "envent":"PING",
                     "endpoint":AXO_ENDPOINT_ID
                 })
-                await req_rep_socket.send_multipart([b"activex",b"PONG",SUCCESS_STATUS,b"{}",b""])
+                await req_rep_socket.send_multipart([b"activex",b"PONG",CONSTANTS.SUCCESS_STATUS,b"{}",b""])
                 continue
             else:
-                await req_rep_socket.send_multipart([b"activex",b"UKNOWN.OPERATION",ERROR_STATUS,b"{}",b""])
+                await req_rep_socket.send_multipart([b"activex",b"UKNOWN.OPERATION",CONSTANTS.ERROR_STATUS,b"{}",b""])
                 continue
         except Exception as e:
             logger.error(str(e))
-            await req_rep_socket.send_multipart([b"activex",b"INTERNAL.ENDPOINT.ERROR",ERROR_STATUS,b"{}",b""])
+            await req_rep_socket.send_multipart([b"activex",b"INTERNAL.ENDPOINT.ERROR",CONSTANTS.ERROR_STATUS,b"{}",b""])
 
 
 # async def main_sub():
@@ -800,7 +326,7 @@ async def run_heater():
         "MAX_TICK_TIME":x
     })
     while True:
-        if h.is_cold():
+        if heater.is_cold():
             logger.warning({
                 "event":"ENDPOINT.IS.COLD",
             })
