@@ -1,7 +1,7 @@
 from mictlanx.v4.client import Client
 from mictlanx.utils.index import Utils as UtilsX
 from activexendpoint.dummy import add_dummy_module,Dummy
-from activex import ActiveX
+from activex import Axo
 import types
 from activex.contextmanager import ActiveXContextManager
 from activex.endpoint import XoloEndpointManager
@@ -11,7 +11,7 @@ import os
 
 def activex_method(f):
     # @wraps(f)
-    def __activex(self:ActiveX,*args,**kwargs):
+    def __activex(self:Axo,*args,**kwargs):
         return f(self, *args,**kwargs)
     return __activex
 # def activex_method(f):
@@ -85,11 +85,11 @@ def main2():
         bucket_id="y002f6e9cdt4574jaiwczb9i8dn3ar0q",
         key="5modgp9arw9nt8vl"
     ).unwrap().value
-    obj_result = ActiveX.from_bytes(obj_bytes,original_f=False)
+    obj_result = Axo.from_bytes(obj_bytes,original_f=False)
 
     if obj_result.is_ok:
         obj = obj_result.unwrap()
-        res = ActiveX.call(obj, method_name="to_chunks",chunk_size=1000, source_bucket_id="xxx")
+        res = Axo.call(obj, method_name="to_chunks",chunk_size=1000, source_bucket_id="xxx")
         print("RES_CALL", res)
 def main3():
     endpoint_manager = XoloEndpointManager()
@@ -108,7 +108,7 @@ def main3():
         bucket_id="e6bye68q3t3c96p5dcos5jgqi1jx2miu",
         key="rynbudw6ss0idqg5"
     ).unwrap().value
-    obj_result = ActiveX.get_object_parts(obj_bytes,original_f=False)
+    obj_result = Axo.get_object_parts(obj_bytes,original_f=False)
 
     # print("OBJ_RESULT", obj_result[0])
     # if obj_result.is_ok:

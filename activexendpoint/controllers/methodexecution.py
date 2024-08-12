@@ -4,10 +4,10 @@ import time as T
 import json as J
 import string
 from option import Result,Ok,Err,Some,NONE
-from typing import Any
+from typing import Any,Dict,List
 from nanoid import generate as nanoid 
 
-from activex import ActiveX
+from activex import Axo
 import activexendpoint.utils as U
 from activexendpoint.interfaces import Heater,Task
 from activexendpoint.utils import install_packages
@@ -16,7 +16,9 @@ from activexendpoint.store import KVStore
 from activexendpoint.controllers import put_metadata
 from activexendpoint.serde import Serde
 import activexendpoint.constants as CONSTANTS
-from mictlanx.v4.interfaces import GetMetadataResponse,GetBytesResponse
+# 
+from mictlanx.v4.client import Client as MictlanXClient
+from mictlanx.v4.interfaces import GetMetadataResponse,GetBytesResponse,Metadata
 from mictlanx.logger.log import Log
 from activex.storage.data import StorageService
 ALPHABET = string.ascii_lowercase+string.digits
@@ -38,9 +40,116 @@ logger = Log(
     when=AXO_LOGGER_WHEN,
     interval=AXO_LOGGER_INTERVAL,
 )
+
+
+
+async def __call(
+        obj:Any,
+        fname:str,
+        ball:Metadata,
+        serde:Serde,
+        sink_bucket_id:str,
+        axo_sink_path_sink_bucket_id_path:str,
+        storage_service:MictlanXClient,
+        task_fkwargs:Dict[str,Any] = {},
+        task_fargs:List[Any] = ()
+):
+    axo_sink_key  = nanoid(alphabet=string.ascii_lowercase+string.digits,size=16)
+    axo_sink_path = "{}/{}".format(axo_sink_path_sink_bucket_id_path,axo_sink_key)
+    axo_result_id = "{}.{}.{}".format(fname,sink_bucket_id ,axo_sink_key )
+    fkwargs = {
+        **task_fkwargs,
+        "axo_result_id":axo_result_id,
+        "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
+        "axo_sink_path":axo_sink_path,
+        "axo_sink_key":axo_sink_key,
+        "source_bucket_id":ball.bucket_id,
+        "source_key":ball.key,
+        "method_name":fname,
+        "metadata":ball.tags,
+        "storage":storage_service
+    }
+    t_call_start = T.time()
+    # method_call_result = Axo.call(*task.fargs,instance=obj,**fkwargs)
+    method_call_result = Axo.call(*task_fargs,**{"instance":obj,**fkwargs})
+    if method_call_result.is_ok:
+        logger.info({
+            "event":"METHOD.CALL",
+            "method_name":fname,
+            "axo_result_id":axo_result_id,
+            "axo_sink_path":axo_sink_path,
+            "axo_sink_key":axo_sink_key,
+            "source_bucket_id":ball.bucket_id,
+            "source_key":ball.key,
+            "response_time":T.time() -  t_call_start
+        })
+        method_call_response = method_call_result.unwrap()
+        if isinstance(method_call_response, Exception):
+            logger.error({
+                "event":"METHOD.CALL.FAILED",
+                "msg":str(method_call_response)
+            })
+            return Err(method_call_response)
+            
+        # print("METHOD_CALL.RESPONSE", method_call_result)
+        if not method_call_response == None:
+            (f_serialize_mode,f_result_bytes)= serde.serialize_fresult(result=method_call_response).unwrap()
+            axo_fsink_key = nanoid(alphabet=string.ascii_lowercase+string.digits, size=16)
+            # result_json[axo_result_id] = f_result_bytes.decode() if f_serialize_mode == 0 else axo_fsink_key
+            put_result   = storage_service.put_chunked(
+                chunks=U.byte_generator(f_result_bytes),
+                bucket_id=sink_bucket_id,
+                key=axo_fsink_key,
+                tags={
+                    "method_name":fname,
+                    "axo_result_id":axo_result_id,
+                    "axo_sink_path":axo_sink_path,
+                    "axo_sink_key":axo_sink_key,
+                    "source_bucket_id":ball.bucket_id,
+                    "source_key":ball.key,
+                }
+            )
+            if put_result.is_err:
+                return Err(put_result.unwrap_err())
+                # fbs = result_json.setdefault("failed_balls",0)
+                # result_json["failed_balls"] = fbs +1
+                # logger.error({
+                #     "event":"PUT.CHUNKED.FAILED",
+                #     "bucket_id":axo_bucket_id,
+                #     "key":axo_fsink_key,
+                # })
+            else:
+                status = 1 
+                return Ok(method_call_response)
+                # fbs = result_json.setdefault("successed_balls",0)
+                # result_json["successed_balls"] = fbs +1
+        else:
+            return Ok(None)
+            # return Err(Exception("{} execution failed".format(fname)))
+            # logger.warning({
+            #     "event":"METHOD.EXEC.NO.OUTPUT",
+            #     "axo_source_bucket_id":source_bucket_id,
+            #     # "axo_source_path":source_ball_local_path,
+            #     "axo_sink_bucket_id":sink_bucket_id,
+            #     "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
+            #     "axo_sink_path":axo_sink_path,
+            #     "axo_sink_key":axo_sink_key,
+            #     "response_time": T.time()- start_time
+            # })
+            
+            # raise 
+    else:
+        error = method_call_result.unwrap_err()
+        logger.error({
+            "event":"METHOD.EXCUTION.FAILED",
+            "reason":str(error )
+        })
+        return Err(error)
+
+
 async def __method_execution(
         serde:Serde,
-        storage_service:StorageService,
+        storage_service:MictlanXClient,
         store:KVStore,
         req_rep_socket:zmq.Socket,
         task:Task)->Result[Any, Exception]:
@@ -145,7 +254,7 @@ async def __method_execution(
         })
         # _______________________________________________________________________________________
         des_start_time = T.time()
-        obj_resul              =serde.deserialize(obj_bytes)
+        obj_resul              =serde.deserialize_ao(obj_bytes)
         if obj_resul.is_err:
             error_msg = "DESERIALIZED.FAILED"
             logger.error({
@@ -158,7 +267,7 @@ async def __method_execution(
             return Err(Exception(error_msg))
         # _______________________________________________________________________________________
 
-        obj = obj_resul.unwrap()
+        axo_obj = obj_resul.unwrap()
         logger.info({
             "event":"DESERALIZATION",
             "bucket_id":axo_bucket_id,
@@ -213,7 +322,8 @@ async def __method_execution(
                     "storage":storage_service
                 }
                 t_call_start = T.time()
-                method_call_result = ActiveX.call(*task.fargs,instance=obj,**fkwargs)
+                # method_call_result = Axo.call(*task.fargs,instance=obj,**fkwargs)
+                method_call_result = Axo.call(*task.fargs,**{"instance":axo_obj,**fkwargs})
                 if method_call_result.is_ok:
                     logger.info({
                         "event":"METHOD.CALL",
@@ -287,15 +397,27 @@ async def __method_execution(
 
                     # continue
 
+        if result_json["failed_balls"] ==0 and result_json["successed_balls"] == 0 :
+            method_result = await __call(
+                obj = axo_obj,
+                axo_sink_path_sink_bucket_id_path=axo_sink_path_sink_bucket_id_path,
+                ball=Metadata(tags={},ball_id="",bucket_id="",checksum="",content_type="",is_disabled=False,key="",producer_id="",size=0),
+                fname=fname,
+                serde=serde,
+                sink_bucket_id=sink_bucket_id,
+                storage_service=storage_service,
+                task_fargs=task.fargs,
+                task_fkwargs=task.fkwargs,
+            )
+            print("METHOOOOOOOOOOOOOOOOOOOOD RESULT", method_result)
+            print("*"*60)
+
+
         logger.info({
             "event":"METHOD.EXEC.COMPLETED",
             "method_name":fname,
             "axo_source_bucket_id":source_bucket_id,
-            # "axo_source_path":source_ball_local_path,
             "axo_sink_bucket_id":sink_bucket_id,
-            # "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
-            # "axo_sink_path":axo_sink_path,
-            # "axo_sink_key":axo_sink_key,
             "response_time": T.time()- start_time
         })
         result_json["response_time"] = T.time()- start_time
@@ -320,7 +442,7 @@ async def method_exeution(
         endpoint_manager:XoloEndpointManager,
         heater:Heater,
         serde:Serde,
-        storage_service:StorageService,
+        storage_service:MictlanXClient,
         store:KVStore,
         req_rep_socket:zmq.Socket,
         task:Task

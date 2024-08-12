@@ -48,30 +48,10 @@ services:
                 - activex-endpoint-0-sink:/sink
         networks:
                 - mictlanx
-    tezcanalyticx-0:
-        image: nachocode/tezcanalyticx:api
-        container_name:  tezcanalyticx-0
-        environment:
-        - LOGGER_PATH=/log
-        - IP_ADDR=0.0.0.0
-        - PORT=45000
-        - RELOAD=1
-        - PERIOD_WINDOW_TIME_SEC=30s
-        - LOGGER_INTERVAL=24
-        - LOGGER_WHEN=h
-        command: uvicorn tezcanalyticx.server:app --host ${IP_ADDR-0.0.0.0} --port ${PORT-45000}
-        ports:
-        - ${PORT-45000}:${PORT-45000}
-        volumes:
-        - tezcanalyticx-0:/log
-        networks:
-        - mictlanx
-        restart: unless-stopped
 volumes:
     activex-endpoint-0:
     activex-endpoint-0-sink:
     activex-endpoint-0-source:
-    tezcanalyticx-0:
 networks:
     mictlanx:
        external: true

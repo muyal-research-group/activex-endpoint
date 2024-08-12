@@ -38,7 +38,7 @@ class Task(object):
     
     # def __str
     def __get_state(self):
-        if self.operation == "PUT.METADATA":
+        if self.operation == "PUT.METADATA" or self.operation=="MW":
             return self.metadata
         else:
             return self.fkwargs

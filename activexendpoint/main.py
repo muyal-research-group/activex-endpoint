@@ -2,12 +2,16 @@ import os
 import sys
 import time as T
 import asyncio
+import types
 import zmq.asyncio 
 import humanfriendly as HF
 from dotenv import load_dotenv
 from option import Result,Ok,Err,Some,NONE
 from nanoid import generate as nanoid
+# 
+from activexendpoint.controllers.mw import manager_worker
 # Activex 
+from activex import Axo
 from activex.endpoint import XoloEndpointManager,DistributedEndpoint
 from activex.contextmanager import ActiveXContextManager
 from activex.runtime.local import LocalRuntime
@@ -26,11 +30,13 @@ from activexendpoint.store import LocalKVStore
 from activexendpoint.interfaces import Task,Heater
 from activexendpoint.serde import DefaultSerde
 import activexendpoint.constants as CONSTANTS
+# globals()["Axo"] =Axo
 ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH",-1)
 if not ENV_FILE_PATH == -1:
     load_dotenv(ENV_FILE_PATH)
 
 
+AXO_CLASSES_REPOSITORY        = os.environ.get("AXO_CLASSES_REPOSITORY","/home/nacho/Programming/Python/activex-endpoint/classes")
 AXO_ENDPOINT_ID               = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
 AXO_LOGGER_PATH               = os.environ.get("AXO_LOGGER_PATH","/log")
 AXO_LOGGER_WHEN               = os.environ.get("AXO_LOGGER_WHEN","h")
@@ -242,6 +248,24 @@ async def main_req_rep():
                     store=store
                 )
                 print("RES", res)
+            elif operation == "ADD.CLASS.DEF":
+                class_def_result = serde.deserialize(task.f)
+                if class_def_result.is_ok:
+                    class_def = class_def_result.unwrap()
+                    globals()[class_def.__name__] = class_def
+                    logger.info({"event":"ADD.CLASS.DEF","class_name": class_def.__name__})
+                    await req_rep_socket.send_multipart([b"activex",b"CLASS.DEFINITION.ADDED",CONSTANTS.SUCCESS_STATUS,b"{}",b""])
+                
+            elif operation == "MW":
+                await manager_worker(
+                    store=store,
+                    req_rep_socket=req_rep_socket,
+                    serde=serde,
+                    storage_service=mictlanx_client,
+                    endpoint_manager=endpoint_manager,
+                    heater=heater,
+                    task=task
+                )
             elif operation =="METHOD.EXEC":
                 res = await method_exeution(
                     store=store,

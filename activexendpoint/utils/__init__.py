@@ -32,27 +32,33 @@ logger = Log(
 )
 
 def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
+    topic_bytes = multipart[0]
+    op_bytes    = multipart[1]
+    topic       = topic_bytes.decode(encoding="utf-8")
+    operation   = op_bytes.decode(encoding="utf-8")
+
     if len(multipart) == 3:
-        topic_bytes,op_bytes, metadata_bytes = multipart 
+        _,_, metadata_bytes = multipart 
         return Ok(Task(
-            topic     = topic_bytes.decode(encoding="utf-8"),
-            operation = op_bytes.decode(encoding="utf-8"),
+            topic     = topic,
+            operation = operation,
             metadata  = J.loads(metadata_bytes),
             f         = bytearray()
         ))
     if len(multipart) == 4:
-        topic_bytes,op_bytes, metadata_bytes, fbytes = multipart 
+        _,_, metadata_bytes, fbytes = multipart 
+        # operation = op_bytes.decode(encoding="utf-8")
         return Ok(Task(
-            topic     = topic_bytes.decode(encoding="utf-8"),
-            operation = op_bytes.decode(encoding="utf-8"),
+            topic     = topic,
+            operation = operation,
             metadata  = J.loads(metadata_bytes),
-            f         = fbytes 
+            f         = CP.loads(fbytes) if operation == "MW" else fbytes
         ))
     if len(multipart) == 6:
-        topic_bytes,op_bytes, metadata_bytes, fbytes,fargs_bytes, fkwargs_bytes = multipart 
+        _,_, metadata_bytes, fbytes,fargs_bytes, fkwargs_bytes = multipart 
         return Ok(Task(
-            topic     = topic_bytes.decode(encoding="utf-8"),
-            operation = op_bytes.decode(encoding="utf-8"),
+            topic     = topic,
+            operation = operation,
             metadata  = J.loads(metadata_bytes),
             f         = CP.loads(fbytes),
             fargs     = CP.loads(fargs_bytes),

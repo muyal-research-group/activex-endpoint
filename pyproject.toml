@@ -12,14 +12,24 @@ pyzmq = "^26.0.3"
 cloudpickle = "^3.0.0"
 aiofiles = "^23.2.1"
 # activex="0.0.21"
-mictlanx = "^0.0.157"
-activex = {path = "activex.tar.gz"}
+mictlanx = ">=0.0.160"
+
+
 python-dotenv = "^1.0.1"
+
+
+
+activex = {path = "activex.tar.gz"}
 [tool.poetry.group.dev.dependencies]
 pandas = "1.4.3"
 pytest = "^8.2.2"
 # activex = {version="0.0.19", source="test"}
 galois = "^0.3.9"
+
+
+
+
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
