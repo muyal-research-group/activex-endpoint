@@ -20,6 +20,7 @@ python-dotenv = "^1.0.1"
 
 
 activex = {path = "activex.tar.gz"}
+cryptography = "42.0.5"
 [tool.poetry.group.dev.dependencies]
 pandas = "1.4.3"
 pytest = "^8.2.2"

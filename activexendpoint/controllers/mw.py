@@ -16,6 +16,7 @@ from activex.endpoint import XoloEndpointManager
 from activexendpoint.store import KVStore
 from activexendpoint.controllers import put_metadata
 from activexendpoint.serde import Serde
+from activexendpoint.config import Config
 import activexendpoint.constants as CONSTANTS
 # 
 from mictlanx.v4.client import Client as MictlanXClient
@@ -48,7 +49,8 @@ async def manager_worker(
         storage_service:MictlanXClient,
         store:KVStore,
         req_rep_socket:zmq.Socket,
-        task:Task
+        task:Task,
+        config:Config
 ):
     axo_key          = task.get_axo_key()
     axo_bucket_id    = task.get_axo_bucket_id()
@@ -108,19 +110,28 @@ async def manager_worker(
             source_keys = getattr(axo_obj,"source_keys")
             source_bucket_id = getattr(axo_obj,"source")
             sink_bucket_id = getattr(axo_obj,"sink")
+            source_paths = []
             for source_key in source_keys:
                 print("GET",source_bucket_id,source_key)
+                res = storage_service.get_to_file(bucket_id=source_bucket_id,key=source_key,output_path=config.AXO_DATA_PATH)
+                if res.is_ok:
+                    get_to_file_response = res.unwrap()
+                    source_paths.append(get_to_file_response.path)
             # print("METHOD_CALL_RESULT", method_call_result)
+            print("SOURCE_PATHS",source_paths)
             print("PUT RESULT IN",sink_bucket_id)
-            print("F", task.f)
+            f_result =  task.f(axo_obj, storage = storage_service, source_paths = source_paths)
+            print("F_RESULT", f_result)
             # print("SOURCE_KEYUS", x)
+            print("*"*50)
+            await req_rep_socket.send_multipart([b"activex",b"success",CONSTANTS.SUCCESS_STATUS,b"{}",b""])
+            return Ok(True)
         except Exception as e:
-            print("ERROR SOURCE_KEUYS",e)
-        # print("AXO_OBJ SOURCE_BUCKET_ID",axo_obj.source_bucket_id)
-        # print("AXO_OBJ SOURCE_KEYS",axo_obj.source_keys)
-
-        print("*"*50)
-        await req_rep_socket.send_multipart([b"activex",b"success",CONSTANTS.SUCCESS_STATUS,b"{}",b""])
-        return Ok(True)
+            logger.error({
+                "event":"EXECUTING.TASK",
+                "error":str(e)
+            })
+            # print("ERROR SOURCE_KEUYS",e)
+            return Err(e)
     except Exception as e:
         return Err(e)
