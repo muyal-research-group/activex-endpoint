@@ -1,11 +1,11 @@
 from activexendpoint.interfaces import Heater,Task
-from activex.endpoint import XoloEndpointManager
+from axo.endpoint.manager import DistributedEndpointManager
 import activexendpoint.utils as U
 from mictlanx.v4.summoner.summoner import Summoner
 from mictlanx.logger.log import Log
 from typing import Dict,Any
 import json as J
-from activex import MetadataX
+from axo import MetadataX
 from option import Err,Result,Ok
 from nanoid import generate as nanoid
 import string
@@ -14,7 +14,7 @@ import time as T
 import activexendpoint.constants  as CONSTANTS
 from activexendpoint.store import KVStore
 # from activexendpoint.i
-from activexendpoint.dummy import add_dummy_module
+# from activexendpoint.dummy import add_dummy_module
 
 
 import os
@@ -63,7 +63,14 @@ async def __put_metadata(req_rep_socket:zmq.Socket,store:KVStore,metadata:Dict[s
         # "{} {} {}".format("PUT.METADATA",key,rt))
     return Ok(axo_key)
 
-async def put_metadata(store:KVStore,req_rep_socket:zmq.Socket,h:Heater,endpoint_manager:XoloEndpointManager,summoner:Summoner,task:Task):
+async def put_metadata(
+        store:KVStore,
+        req_rep_socket:zmq.Socket,
+        h:Heater,
+        endpoint_manager:DistributedEndpointManager,
+        summoner:Summoner,
+        task:Task
+):
     try:
         _start_time = T.time()
         # operation   = task.operation

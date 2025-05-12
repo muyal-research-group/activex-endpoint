@@ -2,12 +2,12 @@ import zmq
 from typing import Any
 from activexendpoint.interfaces import Heater,Task
 from activexendpoint.store import KVStore
-from activex.endpoint import XoloEndpointManager
+from axo.endpoint.manager import DistributedEndpointManager
 from option import Err,Ok,Result
 async def add_code(
         req_rep_socket:zmq.Socket,
         heater:Heater,
-        endpoint_manager:XoloEndpointManager,
+        endpoint_manager:DistributedEndpointManager,
         task:Task,
         store:KVStore
 )->Result[Any,Exception]:

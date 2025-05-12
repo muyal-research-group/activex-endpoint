@@ -1,5 +1,5 @@
 from abc import ABC,abstractmethod
-from activex import Axo
+from axo import Axo
 from option import Result,Err,Ok
 from typing import Tuple,Any
 import cloudpickle as CP
@@ -44,7 +44,8 @@ class DefaultSerde(Serde):
     def deserialize_ao(self, x: bytes,**kwargs)->Result[Axo, Exception]:
         try:
             original_f:bool = kwargs.get("original_f",False)
-            res = Axo.get_object_parts(raw_obj= x,original_f=original_f)
+            res = Axo.get_parts(raw_obj= x)
+            print("RES",res)
             if res.is_err:
                 return res
             (attrs, methods, class_def, class_code) = res.unwrap()
@@ -60,7 +61,6 @@ class DefaultSerde(Serde):
                 if method_name not in ('__class__', '__dict__', '__module__', '__weakref__'):
                     setattr(instance, method_name, bound_method)
             return Ok(instance)
-            # return Ok(CP.loads(x))
         except Exception as e:
             return Err(e)
     def serialize_fresult(self,result:Any)->Result[Tuple[int, bytes],Exception]:

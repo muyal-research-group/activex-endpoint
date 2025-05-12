@@ -36,7 +36,18 @@ def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
     op_bytes    = multipart[1]
     topic       = topic_bytes.decode(encoding="utf-8")
     operation   = op_bytes.decode(encoding="utf-8")
-
+    print(operation)
+    if operation == "METHOD.EXEC":
+        _,_, metadata_bytes, fargs_bytes, fkwargs_bytes = multipart 
+        fargs = CP.loads(fargs_bytes)
+        print("FARGS",fargs)
+        return Ok(Task(
+            topic     = topic,
+            operation = operation,
+            metadata  = J.loads(metadata_bytes),
+            fargs     = fargs,
+            fkwargs   = CP.loads(fkwargs_bytes)
+        ))
     if len(multipart) == 3:
         _,_, metadata_bytes = multipart 
         return Ok(Task(
@@ -53,16 +64,6 @@ def  from_multipart_to_task(multipart:List[bytes])->Result[Task,Exception]:
             operation = operation,
             metadata  = J.loads(metadata_bytes),
             f         = CP.loads(fbytes) if operation == "MW" else fbytes
-        ))
-    if len(multipart) == 6:
-        _,_, metadata_bytes, fbytes,fargs_bytes, fkwargs_bytes = multipart 
-        return Ok(Task(
-            topic     = topic,
-            operation = operation,
-            metadata  = J.loads(metadata_bytes),
-            f         = CP.loads(fbytes),
-            fargs     = CP.loads(fargs_bytes),
-            fkwargs   = CP.loads(fkwargs_bytes)
         ))
     return Err(Exception("Multipart request is malformed"))
 # logger = logging.getLogger(AXO_ENDPOINT_ID)

@@ -1,4 +1,4 @@
-from typing import Dict,Callable, Any,List
+from typing import Dict,Callable, Any,List,Optional
 import string
 from nanoid import generate as nanoid 
 import humanfriendly as HF
@@ -20,7 +20,7 @@ class Heater:
         
         return (T.time() - self.last_invocation)  >= self.max_idle_time
 class Task(object):
-    def __init__(self,topic:str, operation:str, metadata:Dict[str,Any], f:AnyFunctionType,fargs:list= [],fkwargs:dict = {}):
+    def __init__(self,topic:str, operation:str, metadata:Dict[str,Any], f:Optional[AnyFunctionType]=None,fargs:list= [],fkwargs:dict = {}):
         self.task_id = nanoid()
         self.topic  = topic
         self.operation = operation
@@ -29,11 +29,11 @@ class Task(object):
         self.fargs = fargs
         self.fkwargs= fkwargs
         # self.max_workers = 
-        self.endpoint_id = ""
+        self.axo_endpoint_id = ""
         self.axo_bucket_id = ""
-        self.sink_bucket_id = ""
-        self.source_bucket_id = ""
-        self.output_key = ""
+        self.axo_sink_bucket_id = ""
+        self.axo_source_bucket_id = ""
+        self.axo_output_key = ""
         self.separator = ";"
     
     # def __str
@@ -52,10 +52,10 @@ class Task(object):
         return self.__get_state().get("separator",self.separator)
     
     def get_endpoint_id(self)->str:
-        return self.__get_state().get("endpoint_id","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=5)))
+        return self.__get_state().get("axo_endpoint_id","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=5)))
     
     def get_sink_bucket_id(self)->str:
-        return self.__get_state().get("sink_bucket_id", nanoid(alphabet=string.ascii_lowercase + string.digits,size=12))
+        return self.__get_state().get("axo_sink_bucket_id", nanoid(alphabet=string.ascii_lowercase + string.digits,size=12))
 
     def get_axo_bucket_id(self)->str:
         return self.__get_state().get("axo_bucket_id", nanoid(alphabet=string.ascii_lowercase+string.digits))
@@ -63,13 +63,15 @@ class Task(object):
         return self.__get_state().get("axo_key", nanoid(alphabet=string.ascii_lowercase+string.digits))
     # ___________________________________________
     def get_source_bucket_id(self)->str:
-        return self.__get_state().get("source_bucket_id", nanoid(alphabet=string.ascii_lowercase+string.digits))
+        return self.__get_state().get("axo_source_bucket_id", nanoid(alphabet=string.ascii_lowercase+string.digits))
     
     # def get_source_key(self)->str:
         # return self.__get_state().get("source_key", "")
 
     def get_source_keys(self)->List[str]:
-        return self.__get_state().get("source_keys", [])
+        return self.__get_state().get("axo_source_keys", [])
+    def get_sink_keys(self)->List[str]:
+        return self.__get_state().get("axo_sink_keys", [])
     
     def is_bucket_main_source(self)->bool:
         return self.get_source_key() == "" and len(self.get_source_keys() ) ==0

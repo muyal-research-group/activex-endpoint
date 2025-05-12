@@ -48,8 +48,20 @@ class EndpointManager(object):
 
     def clean_endpoints(self,n:int=10):
         for i in range(n):
-            res = self.summoner.delete_container(container_id="axo-endpoint-{}".format(i))
-            print("Deleting axo-endpoint-{}...{}".format(i,res))
+            t1 = T.time()
+            container_id = "axo-endpoint-{}".format(i)
+            logger.debug({
+                "event":"DELETING.ENDPOINT",
+                "endpoint_id":container_id
+            })
+            res = self.summoner.delete_container(container_id=container_id )
+            logger.info({
+                "event":"DELETED.ENDPOINT",
+                "endpoint_id":container_id,
+                "response_time": T.time() -t1 
+            })
+            
+            # print("Deleting...{}".format(container_id,res))
 
 
     def add_endpoint(self,endpoint_id:str,req_res_port:int, pub_sub_port:int ):

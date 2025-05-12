@@ -7,6 +7,8 @@ class Config:
         self.AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID", "activex-endpoint-0")
         self.AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH", "/log")
         self.AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN", "h")
+        self.AXO_SYNC_MAX_IDLE_TIME = os.environ.get("AXO_SYNC_MAX_IDLE_TIME","24h")
+        self.AXO_HEATER_TICK_TIME = os.environ.get("AXO_HEATER_TICK_TIME","30s")
         self.AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL", "24"))
         self.AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG", "1")))
         self.AXO_SINK_PATH = os.environ.get("AXO_SINK_PATH", "/sink")
