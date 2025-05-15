@@ -310,157 +310,26 @@ async def __method_execution(
         for attr_name, attr_value in attrs.items():
             setattr(obj, attr_name, attr_value) 
         print(task.fargs,task.fkwargs)
-        result = f(*task.fargs)
+        result       = f(*task.fargs)
+        result_bytes = CP.dumps(result)
+        result_key = nanoid()
+        res = await storage_service.put(
+            bucket_id = sink_bucket_id,
+            key       =result_key ,
+            value=result_bytes,
+        )
+        if res.is_ok:
+            result_metadata = {
+                "result_key":result_key
+            }
+            result_metadata_bytes = CP.dumps(result_metadata)
+            await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",CONSTANTS.SUCCESS_STATUS,result_metadata_bytes, result_bytes ])
+            return Ok(True)
+        else:
+            error_msg = "Faile to save the result"
+            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",error_msg.encode()])
+            return Err(Exception(error_msg))
 
-        print("RESULT", result)
-        await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",CONSTANTS.SUCCESS_STATUS,b"{}", f"{result}".encode() ])
-        # print(f(**attrs))
-        # print(getattr(obj, task))
-
-
-        # await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",b""])
-        # return Err(Exception("BOOM!"))
-
-        # Pattern
-        # Get bucket
-
-
-        # bucket_metadata_gen = storage_service.get_all_bucket_metadata(bucket_id=source_bucket_id)
-        # result_json = {
-        #     "successed_balls":0,
-        #     "failed_balls":0,
-        #     "response_time":0
-        # }
-        # # for source_ball_local_path in source_bucket_files:
-        # fname = task.metadata.get("fname",task.f.__name__)
-        # skip_balls = []
-        # for router_response in bucket_metadata_gen:
-        #     for ball in router_response.balls:
-        #         status = -1
-        #         combined_key = "{}@{}".format(ball.bucket_id, ball.key)
-        #         if combined_key in skip_balls:
-        #             logger.debug({
-        #                 "event":"SKIP.BALL",
-        #                 "bucket_id":ball.bucket_id,
-        #                 "key":ball.key,
-        #                 "status":status
-        #             })
-        #             continue
-        #         axo_sink_key  = nanoid(alphabet=string.ascii_lowercase+string.digits,size=16)
-        #         axo_sink_path = "{}/{}".format(axo_sink_path_sink_bucket_id_path,axo_sink_key)
-        #         axo_result_id = "{}.{}.{}".format(fname,sink_bucket_id ,axo_sink_key )
-        #         fkwargs = {
-        #             **task.fkwargs,
-        #             "axo_result_id":axo_result_id,
-        #             "axo_sink_path_sink_bucket_id_path":axo_sink_path_sink_bucket_id_path,
-        #             "axo_sink_path":axo_sink_path,
-        #             "axo_sink_key":axo_sink_key,
-        #             "source_bucket_id":ball.bucket_id,
-        #             "source_key":ball.key,
-        #             "method_name":fname,
-        #             "metadata":ball.tags,
-        #             "storage":storage_service
-        #         }
-        #         t_call_start = T.time()
-        #         # method_call_result = Axo.call(*task.fargs,instance=obj,**fkwargs)
-        #         method_call_result = Axo.call(*task.fargs,**{"instance":axo_obj,**fkwargs})
-        #         if method_call_result.is_ok:
-        #             logger.info({
-        #                 "event":"METHOD.CALL",
-        #                 "method_name":fname,
-        #                 "axo_result_id":axo_result_id,
-        #                 "axo_sink_path":axo_sink_path,
-        #                 "axo_sink_key":axo_sink_key,
-        #                 "source_bucket_id":ball.bucket_id,
-        #                 "source_key":ball.key,
-        #                 "response_time":T.time() -  t_call_start
-        #             })
-        #             method_call_result = method_call_result.unwrap()
-        #             if isinstance(method_call_result, Exception):
-        #                 logger.error({
-        #                     "event":"METHOD.CALL.FAILED",
-        #                     "msg":str(method_call_result)
-        #                 })
-        #                 continue
-        #             if not method_call_result == None:
-        #                 (f_serialize_mode,f_result_bytes)= serde.serialize_fresult(result=method_call_result).unwrap()
-        #                 axo_fsink_key = nanoid(alphabet=string.ascii_lowercase+string.digits, size=16)
-        #                 result_json[axo_result_id] = f_result_bytes.decode() if f_serialize_mode == 0 else axo_fsink_key
-        #                 put_result   = storage_service.put_chunked(
-        #                     chunks=U.byte_generator(f_result_bytes),
-        #                     bucket_id=sink_bucket_id,
-        #                     key=axo_fsink_key,
-        #                     tags={
-        #                         "method_name":fname,
-        #                         "axo_result_id":axo_result_id,
-        #                         "axo_sink_path":axo_sink_path,
-        #                         "axo_sink_key":axo_sink_key,
-        #                         "source_bucket_id":ball.bucket_id,
-        #                         "source_key":ball.key,
-        #                     }
-        #                 )
-        #                 if put_result.is_err:
-        #                     fbs = result_json.setdefault("failed_balls",0)
-        #                     result_json["failed_balls"] = fbs +1
-        #                     logger.error({
-        #                         "event":"PUT.CHUNKED.FAILED",
-        #                         "bucket_id":axo_bucket_id,
-        #                         "key":axo_fsink_key,
-        #                     })
-        #                 else:
-        #                     status = 1 
-        #                     fbs = result_json.setdefault("successed_balls",0)
-        #                     result_json["successed_balls"] = fbs +1
-        #             else:
-        #                 logger.warning({
-        #                     "event":"METHOD.EXEC.NO.OUTPUT",
-        #                     "axo_source_bucket_id":source_bucket_id,
-        #                     # "axo_source_path":source_ball_local_path,
-        #                     "axo_sink_bucket_id":sink_bucket_id,
-        #                     "axo_bucket_sink_path":axo_sink_path_source_bucket_id_path,
-        #                     "axo_sink_path":axo_sink_path,
-        #                     "axo_sink_key":axo_sink_key,
-        #                     "response_time": T.time()- start_time
-        #                 })
-                        
-        #                 # raise Exception("{} execution failed".format(fname))
-        #         else:
-        #             logger.error({
-        #                 "event":"METHOD.EXCUTION.FAILED",
-        #                 "reason":str(method_call_result.unwrap_err())
-        #             })
-                
-
-        #         if status == 0:
-        #             skip_balls.append(combined_key)
-
-        #             # continue
-
-        # if result_json["failed_balls"] ==0 and result_json["successed_balls"] == 0 :
-        #     method_result = await __call(
-        #         obj = axo_obj,
-        #         axo_sink_path_sink_bucket_id_path=axo_sink_path_sink_bucket_id_path,
-        #         ball=InterfaceX.Metadata(tags={},ball_id="",bucket_id="",checksum="",content_type="",is_disabled=False,key="",producer_id="",size=0),
-        #         fname=fname,
-        #         serde=serde,
-        #         sink_bucket_id=sink_bucket_id,
-        #         storage_service=storage_service,
-        #         task_fargs=task.fargs,
-        #         task_fkwargs=task.fkwargs,
-        #     )
-
-
-        # logger.info({
-        #     "event":"METHOD.EXEC.COMPLETED",
-        #     "method_name":fname,
-        #     "axo_source_bucket_id":source_bucket_id,
-        #     "axo_sink_bucket_id":sink_bucket_id,
-        #     "response_time": T.time()- start_time
-        # })
-        # result_json["response_time"] = T.time()- start_time
-        # result_metadata = J.dumps({}).encode(encoding="utf-8")
-        # result_bytes = J.dumps(result_json).encode()
-        # await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",CONSTANTS.SUCCESS_STATUS,result_metadata, result_bytes])
     except Exception as e:
         error_msg = "Uknown error"
         logger.error({
@@ -510,3 +379,4 @@ async def method_exeution(
         req_rep_socket  = req_rep_socket,
         task            = task,
     )
+    return result

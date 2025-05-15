@@ -22,8 +22,8 @@ from mictlanx.v4.summoner.summoner import Summoner
 
 # ActivexEndpoitn
 from activexendpoint.endpoints import EndpointManager
-from activexendpoint.controllers import put_metadata,method_exeution,add_code,elasticity
-from activexendpoint.utils import install_packages,deploy_endpoint
+from activexendpoint.controllers import put_metadata,method_exeution,elasticity
+from activexendpoint.utils import install_packages
 import activexendpoint.utils as U
 from activexendpoint.store import LocalKVStore
 from activexendpoint.interfaces import Heater
@@ -185,26 +185,7 @@ async def main_req_rep():
                         "error":str(response.unwrap_err())
                     })
                     await req_rep_socket.send_multipart([b"activex",b"error",CONSTANTS.ERROR_STATUS, b"{}",b""])
-            elif operation == "ADD.CODE":
-                res = add_code(
-                    req_rep_socket= req_rep_socket,
-                    h = heater,
-                    endpoint_manager=endpoint_manager,
-                    summoner=summoner,
-                    task=task,
-                    store=store
-                )
-                print("RES", res)
-            elif operation == "ADD.CLASS.DEF":
-                class_def_result = serde.deserialize(task.f)
-                if class_def_result.is_ok:
-                    class_def = class_def_result.unwrap()
-                    globals()[class_def.__name__] = class_def
-                    logger.info({"event":"ADD.CLASS.DEF","class_name": class_def.__name__})
-                    await req_rep_socket.send_multipart([b"activex",b"CLASS.DEFINITION.ADDED",CONSTANTS.SUCCESS_STATUS,b"{}",b""])
-                
             elif operation == "MW":
-                print("="*100)
                 await manager_worker(
                     store=store,
                     req_rep_socket=req_rep_socket,
@@ -225,7 +206,6 @@ async def main_req_rep():
                     heater=heater,
                     task=task
                 )
-                print("METHOD_EXECUTION",res)
             elif operation == "ELASTICITY":
                 res = await elasticity(
                     store=store,
@@ -269,31 +249,7 @@ async def list_files(directory):
             print(os.path.join(dirpath, filename))
    
 
-async def run_file_sync():
-    # x  =os.environ.get("AXO_SYNC_MAX_IDLE_TIME","20s")
-    AXO_SYNC_MAX_IDLE_TIME = HF.parse_timespan(config.AXO_SYNC_MAX_IDLE_TIME)
-    logger.debug({
-        "event":"AXO.FILE.SYNC",
-        "max_idle_time":config.AXO_SYNC_MAX_IDLE_TIME
-    })
-    
-    while True:
-        try:
-            item =  await asyncio.wait_for(q.get(), timeout=AXO_SYNC_MAX_IDLE_TIME)
-        except asyncio.TimeoutError as e:
-            logger.warning({
-                "event":"max idle time reached",
-                "max_idle_time":config.AXO_SYNC_MAX_IDLE_TIME
-            })
-        except Exception as e: 
-            logger.error(str(e))
-        finally:
-            await asyncio.sleep(delay=AXO_SYNC_MAX_IDLE_TIME)
-
-
-
 async def run_heater():
-    # x  =os.environ.get("HEATER_TICK_TIME","30s")
     HEATER_TICK_TIME = HF.parse_timespan(config.AXO_HEATER_TICK_TIME)
     logger.debug({
         "event":"HEATER.STARTING",
@@ -312,9 +268,7 @@ async def run_heater():
 async def main():
 
     task1 = asyncio.create_task(main_req_rep())
-    task2 = asyncio.create_task(run_file_sync())
-    # task2 = asyncio.create_task(run_heater())
-    await asyncio.gather(task1,task2)
+    await asyncio.gather(task1)
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
