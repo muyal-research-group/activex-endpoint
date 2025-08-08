@@ -7,11 +7,11 @@ import humanfriendly as HF
 from dotenv import load_dotenv
 from option import Some
 # 
-from activexendpoint.controllers.mw import manager_worker
+from axo_endpoint.controllers.mw import manager_worker
 # Activex 
 from axo.endpoint.manager import DistributedEndpointManager
 from axo.endpoint.endpoint import DistributedEndpoint
-from axo.contextmanager import ActiveXContextManager
+from axo.contextmanager import AxoContextManager
 from axo.runtime.local import LocalRuntime
 from axo.storage.data import MictlanXStorageService
 # Mictlanx
@@ -21,43 +21,43 @@ from mictlanx.utils.index import Utils as MictlanXUtils
 from mictlanx.v4.summoner.summoner import Summoner
 
 # ActivexEndpoitn
-from activexendpoint.endpoints import EndpointManager
-from activexendpoint.controllers import put_metadata,method_exeution,elasticity
-from activexendpoint.utils import install_packages
-import activexendpoint.utils as U
-from activexendpoint.store import LocalKVStore
-from activexendpoint.interfaces import Heater
-from activexendpoint.serde import DefaultSerde
-import activexendpoint.constants as CONSTANTS
-from activexendpoint.config import Config
+from axo_endpoint.endpoints import EndpointManager
+from axo_endpoint.controllers import put_metadata,method_exeution,elasticity
+from axo_endpoint.utils import install_packages
+import axo_endpoint.utils as U
+from axo_endpoint.store import LocalKVStore
+from axo_endpoint.interfaces import Heater
+from axo_endpoint.serde import DefaultSerde
+import axo_endpoint.constants as CONSTANTS
+from axo_endpoint.config import Config
 # globals()["Axo"] =Axo
 ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH",-1)
 if not ENV_FILE_PATH == -1:
     load_dotenv(ENV_FILE_PATH)
 
 
+
 config = Config()
-loop = asyncio.get_event_loop()
-asyncio.set_event_loop(loop=loop)
+
 
 
 serde = DefaultSerde()
 
 logger = Log(
-    console_handler_filter=lambda x: config.AXO_DEBUG,
-    create_folder=True,
-    error_log=True,
-    name=config.AXO_ENDPOINT_ID,
-    path=config.AXO_LOGGER_PATH,
-    when=config.AXO_LOGGER_WHEN,
-    interval=config.AXO_LOGGER_INTERVAL,
+    console_handler_filter = lambda x: config.AXO_DEBUG,
+    create_folder          = True,
+    error_log              = True,
+    name                   = config.AXO_ENDPOINT_ID,
+    path                   = config.AXO_LOGGER_PATH,
+    when                   = config.AXO_LOGGER_WHEN,
+    interval               = config.AXO_LOGGER_INTERVAL,
 )
 
 
-endpoints_global = list(map(lambda x : DistributedEndpoint.from_str(endpoint_str=x), config.AXO_ENDPOINTS))
+endpoints_global      = list(map(lambda x : DistributedEndpoint.from_str(endpoint_str=x), config.AXO_ENDPOINTS))
 endpoints_global_dict = dict(list(map(lambda e: (e.endpoint_id, e), endpoints_global )))
-endpoint_manager = DistributedEndpointManager(
-    endpoint_manager_id=config.AXO_ENDPOINT_ID,endpoints=endpoints_global_dict
+endpoint_manager      = DistributedEndpointManager(
+    endpoint_manager_id = config.AXO_ENDPOINT_ID, endpoints = endpoints_global_dict
 )
 endpoint_manager.add_endpoint(
     endpoint_id=config.AXO_ENDPOINT_ID,
@@ -69,7 +69,7 @@ endpoint_manager.add_endpoint(
 
 
 
-routers = list(MictlanXUtils.routers_from_str(routers_str=config.MICTLANX_ROUTERS, separator=" ",protocol="https"))
+routers = list(MictlanXUtils.routers_from_str(routers_str=config.MICTLANX_ROUTERS, separator=" ",protocol="http"))
 mictlanx_client          = AsyncClient(
     client_id            = config.MICTLANX_CLIENT_ID,
     debug                = config.MICTLANX_DEBUG,
@@ -80,7 +80,7 @@ mictlanx_client          = AsyncClient(
     routers              = routers,
 )
 
-axcm = ActiveXContextManager(
+axcm = AxoContextManager(
     runtime= LocalRuntime(
         storage_service=Some(
             MictlanXStorageService.from_client(mictlanx_client)
@@ -99,8 +99,9 @@ endpoint_manager_x = EndpointManager(
     summoner = summoner,
     image=config.AXO_ENDPOINT_IMAGE
 )
-if config.AXO_ENDPOINT_ID == "activex-endpoint-0":
-    res = endpoint_manager_x.clean_endpoints()
+
+# if config.AXO_ENDPOINT_ID == "activex-endpoint-0":
+    # res = endpoint_manager_x.clean_endpoints()
 
 endpoint_manager_x.add_endpoint(
     endpoint_id=config.AXO_ENDPOINT_ID,
@@ -218,7 +219,9 @@ async def main_req_rep():
                     # summoner = summoner,
                 )
             elif operation =="PING":
+                t1 = T.time()
                 heater.warm(task_id=task.task_id)
+                st = T.time() - t1
                 logger.debug({
                     "envent":"PING",
                     "endpoint":config.AXO_ENDPOINT_ID
@@ -235,20 +238,6 @@ async def main_req_rep():
 
 
     
-q = asyncio.Queue(maxsize=int(os.environ.get("AXO_SYNC_MAXSIZE_QUEUE","100")))
-
-async def async_walk(directory):
-    global loop
-    # loop = asyncio.get_running_loop()
-    for dirpath, dirnames, filenames in await loop.run_in_executor(None, os.walk, directory):
-        yield dirpath, dirnames, filenames
-
-async def list_files(directory):
-    async for dirpath, dirnames, filenames in async_walk(directory):
-        for filename in filenames:
-            print(os.path.join(dirpath, filename))
-   
-
 async def run_heater():
     HEATER_TICK_TIME = HF.parse_timespan(config.AXO_HEATER_TICK_TIME)
     logger.debug({
@@ -271,4 +260,7 @@ async def main():
     await asyncio.gather(task1)
 
 if __name__ == "__main__":
+
+    loop = asyncio.get_event_loop()
+    # asyncio.set_event_loop(loop=loop)
     loop.run_until_complete(main())

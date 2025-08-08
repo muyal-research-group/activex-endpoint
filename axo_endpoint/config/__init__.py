@@ -4,7 +4,7 @@ from mictlanx.utils.index import Utils as MictlanXUtils
 class Config:
     def __init__(self):
         self.AXO_CLASSES_REPOSITORY = os.environ.get("AXO_CLASSES_REPOSITORY", "/home/nacho/Programming/Python/activex-endpoint/classes")
-        self.AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID", "activex-endpoint-0")
+        self.AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID", "axo-endpoint-0")
         self.AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH", "/log")
         self.AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN", "h")
         self.AXO_SYNC_MAX_IDLE_TIME = os.environ.get("AXO_SYNC_MAX_IDLE_TIME","24h")

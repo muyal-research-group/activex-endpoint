@@ -1,9 +1,10 @@
 [tool.poetry]
-name = "activexendpoint"
+name = "axo_endpoint"
 version = "0.1.0"
 description = ""
 authors = ["Ignacio Castillo <ignacio.bcastillo@gmail.com>"]
 readme = "README.md"
+
 
 [tool.poetry.dependencies]
 python = ">=3.9,<=3.10"
@@ -12,7 +13,7 @@ pyzmq = "^26.0.3"
 cloudpickle = "^3.0.0"
 aiofiles = "^23.2.1"
 # activex="0.0.21"
-mictlanx = "0.0.161a29"
+mictlanx = "0.0.161a40"
 
 
 python-dotenv = "^1.0.1"
@@ -21,7 +22,7 @@ python-dotenv = "^1.0.1"
 
 cryptography = "42.0.5"
 pika = "^1.3.2"
-axo = {path = "/home/nacho/Programming/Python/activex/dist/axo-0.0.1a3.tar.gz"}
+axo = {path = "axo.tar.gz"}
 [tool.poetry.group.dev.dependencies]
 pandas = "1.4.3"
 pytest = "^8.2.2"

@@ -18,9 +18,9 @@ RUN poetry config virtualenvs.create false && \
     poetry lock && \
     poetry install --no-root
 
-COPY ./activexendpoint/ /app/activexendpoint
+COPY ./axo_endpoint/ /app/axo_endpoint
 RUN poetry install
-COPY ./activex.tar.gz .
-RUN poetry remove activex && poetry add /app/activex.tar.gz
+COPY ./axo.tar.gz .
+RUN poetry add /app/axo.tar.gz
 # CMD ["sleep","infinity"]
-ENTRYPOINT [ "poetry", "run", "python3", "-m", "activexendpoint.main" ]
+ENTRYPOINT [ "poetry", "run", "python3", "-m", "axo_endpoint.main" ]

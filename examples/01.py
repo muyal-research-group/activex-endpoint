@@ -1,6 +1,6 @@
 from mictlanx.v4.client import Client
 from mictlanx.utils.index import Utils as UtilsX
-from activexendpoint.dummy import add_dummy_module
+from axo_endpoint.dummy import add_dummy_module
 from activex import Axo
 import types
 from activex.contextmanager import ActiveXContextManager

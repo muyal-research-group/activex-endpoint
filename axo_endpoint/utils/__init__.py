@@ -13,7 +13,7 @@ from nanoid import generate as nanoid
 from mictlanx.v4.summoner.summoner import Summoner ,SummonContainerPayload,ExposedPort
 from mictlanx.interfaces.payloads import MountX
 from mictlanx.logger.log import Log
-from activexendpoint.interfaces import Task
+from axo_endpoint.interfaces import Task
 
 AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
 MICTLANX_XOLO_MODE = os.environ.get("MICTLANX_XOLO_MODE","docker")

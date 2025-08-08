@@ -1,2 +1,2 @@
 #!/bin/bash
-python3 ./activexendpoint/main.py
+python3 ./axo_endpoint/main.py

@@ -11,7 +11,7 @@ from mictlanx.logger.log import Log
 from dataclasses import dataclass
 
 AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
-MICTLANX_XOLO_MODE = os.environ.get("MICTLANX_XOLO_MODE","docker")
+MICTLANX_SUMMONER_MODE = os.environ.get("MICTLANX_SUMMONER_MODE","docker")
 AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH","/log")
 AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN","h")
 AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
@@ -133,7 +133,7 @@ class EndpointManager(object):
                     "MICTLANX_XOLO_API_VERSION": "3",
                     "MICTLANX_XOLO_NETWORK": "10.0.0.0/25",
                     "MICTLANX_XOLO_PORT": "15000",
-                    "MICTLANX_XOLO_MODE":MICTLANX_XOLO_MODE,
+                    "MICTLANX_XOLO_MODE":MICTLANX_SUMMONER_MODE,
                     "MICTLANX_XOLO_PROTOCOL": "http",
                     "MICTLANX_CLIENT_ID":endpoint_id,
                     "MICTLANX_BUCKET_ID": "activex",
@@ -190,7 +190,7 @@ class EndpointManager(object):
             self.endpoints.append(endpoint_data)
             summoner_response = self.summoner.summon(
                     payload= payload,
-                    mode=MICTLANX_XOLO_MODE
+                    mode=MICTLANX_SUMMONER_MODE
             )
             print("SUMMONER_RESPONSE", summoner_response)
             return Ok((summoner_response,endpoint_data))

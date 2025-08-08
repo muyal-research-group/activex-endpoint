@@ -9,21 +9,21 @@ from typing import Any,Dict,List
 from nanoid import generate as nanoid 
 
 from axo import Axo
-import activexendpoint.utils as U
-from activexendpoint.interfaces import Heater,Task
-from activexendpoint.utils import install_packages,deploy_endpoint
+import axo_endpoint.utils as U
+from axo_endpoint.interfaces import Heater,Task
+from axo_endpoint.utils import install_packages,deploy_endpoint
 from axo.endpoint.manager import DistributedEndpointManager
-from activexendpoint.store import KVStore
-from activexendpoint.controllers import put_metadata
-from activexendpoint.serde import Serde
-import activexendpoint.constants as CONSTANTS
+from axo_endpoint.store import KVStore
+from axo_endpoint.controllers import put_metadata
+from axo_endpoint.serde import Serde
+import axo_endpoint.constants as CONSTANTS
 # 
 from mictlanx.v4.client import Client as MictlanXClient
 from mictlanx.logger.log import Log
-from activexendpoint.endpoints import EndpointManager
+from axo_endpoint.endpoints import EndpointManager
 from dataclasses import asdict
 import json as J
-# from activexendpoint.endpoints import E
+# from axo_endpoint.endpoints import E
 ALPHABET = string.ascii_lowercase+string.digits
 
 AXO_ENDPOINT_IMAGE  = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")

@@ -1,6 +1,6 @@
-from activexendpoint.interfaces import Heater,Task
+from axo_endpoint.interfaces import Heater,Task
 from axo.endpoint.manager import DistributedEndpointManager
-import activexendpoint.utils as U
+import axo_endpoint.utils as U
 from mictlanx.v4.summoner.summoner import Summoner
 from mictlanx.logger.log import Log
 from typing import Dict,Any
@@ -11,16 +11,16 @@ from nanoid import generate as nanoid
 import string
 import zmq.asyncio 
 import time as T
-import activexendpoint.constants  as CONSTANTS
-from activexendpoint.store import KVStore
-# from activexendpoint.i
-# from activexendpoint.dummy import add_dummy_module
+import axo_endpoint.constants  as CONSTANTS
+from axo_endpoint.store import KVStore
+# from axo_endpoint.i
+# from axo_endpoint.dummy import add_dummy_module
 
 
 import os
 ALPHABET = string.ascii_lowercase+string.digits
 AXO_ENDPOINT_IMAGE  = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
-AXO_ENDPOINT_ID     = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
+AXO_ENDPOINT_ID     = os.environ.get("AXO_ENDPOINT_ID","axo-endpoint-0")
 AXO_LOGGER_PATH     = os.environ.get("AXO_LOGGER_PATH","/log")
 AXO_LOGGER_WHEN     = os.environ.get("AXO_LOGGER_WHEN","h")
 AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))

@@ -1,5 +1,5 @@
 import unittest as UT
-from activexendpoint.caching import Cache, LRU
+from axo_endpoint.caching import Cache, LRU
 
 class CachingTest(UT.TestCase):
 

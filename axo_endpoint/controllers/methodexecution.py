@@ -11,14 +11,14 @@ from typing import Any,Dict,List
 from nanoid import generate as nanoid 
 
 from axo import Axo
-import activexendpoint.utils as U
-from activexendpoint.interfaces import Heater,Task
-from activexendpoint.utils import install_packages
+import axo_endpoint.utils as U
+from axo_endpoint.interfaces import Heater,Task
+from axo_endpoint.utils import install_packages
 from axo.endpoint.manager import DistributedEndpointManager
-from activexendpoint.store import KVStore
-# from activexendpoint.controllers import put_metadata
-from activexendpoint.serde import Serde
-import activexendpoint.constants as CONSTANTS
+from axo_endpoint.store import KVStore
+# from axo_endpoint.controllers import put_metadata
+from axo_endpoint.serde import Serde
+import axo_endpoint.constants as CONSTANTS
 # 
 from mictlanx.v4.asyncx import AsyncClient as MictlanXClient
 # from mictlanx.v4.interfaces import GetBytesResponse,Metadata
@@ -47,12 +47,20 @@ logger = Log(
 )
 def __axo_method(f):
     def __inner(*args,**kwargs):
-        print("ARGSSSSSSSS",args,kwargs)
-        start = 1
-        if len(args) == 1:
-            start = 0
+        # print("ARGSSSSSSSS",args,kwargs)
+        # start = 1
+        # if len(args) == 1:
+            # start = 0
             
-        return f(*args[start:],**kwargs)
+        # _args = args[start:]
+        # print("SELECTED_ARGS", _args)
+        logger.debug({
+            "event":"__AXO_METHOD",
+            "fname":f.__name__,
+            "args":",".join(map(str,args)),
+            **kwargs
+        })
+        return f(*args,**kwargs)
     return __inner
 
 
@@ -205,7 +213,7 @@ async def __method_execution(
                 bucket_id     = axo_bucket_id,
                 ball_id       = f"{axo_key}_source_code",
             )
-            
+            print(get_metadata_result)
             # Check if get_metadata got an error_____________________________________________
             if get_metadata_result.is_err:
                 error_msg = "{} not found".format(axo_key)
@@ -256,6 +264,7 @@ async def __method_execution(
             bucket_id=axo_bucket_id,
             key=f"{axo_key}_source_code"
         )
+        print("SOURCE_CODE_GET_RES", obj_result_get_response)
         if obj_result_get_response.is_err:
             error_msg = "Get source code failed"
             logger.error({
@@ -290,7 +299,7 @@ async def __method_execution(
         # GET SOURCE BUCKET
         # _______________________________________________________________________________________
         bucket_result = await storage_service.get_bucket_metadata(bucket_id=source_bucket_id)
-        print("BIUCKET_REUSLT",bucket_result)
+        print("BUCKET_REUSLT",bucket_result)
         if bucket_result.is_err:
             error_msg = "Get bucket failed"
             logger.error({
@@ -310,7 +319,9 @@ async def __method_execution(
         for attr_name, attr_value in attrs.items():
             setattr(obj, attr_name, attr_value) 
         print(task.fargs,task.fkwargs)
+        
         result       = f(*task.fargs)
+        print("RESULT",result)
         result_bytes = CP.dumps(result)
         result_key = nanoid()
         res = await storage_service.put(
@@ -318,6 +329,7 @@ async def __method_execution(
             key       =result_key ,
             value=result_bytes,
         )
+        print(res)
         if res.is_ok:
             result_metadata = {
                 "result_key":result_key
@@ -326,7 +338,10 @@ async def __method_execution(
             await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",CONSTANTS.SUCCESS_STATUS,result_metadata_bytes, result_bytes ])
             return Ok(True)
         else:
-            error_msg = "Faile to save the result"
+            error_msg = "Failed to store the result"
+            logger.error({
+                "error":error_msg,
+            })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",error_msg.encode()])
             return Err(Exception(error_msg))
 

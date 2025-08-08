@@ -1,7 +1,7 @@
 import zmq
 from typing import Any
-from activexendpoint.interfaces import Heater,Task
-from activexendpoint.store import KVStore
+from axo_endpoint.interfaces import Heater,Task
+from axo_endpoint.store import KVStore
 from axo.endpoint.manager import DistributedEndpointManager
 from option import Err,Ok,Result
 async def add_code(
