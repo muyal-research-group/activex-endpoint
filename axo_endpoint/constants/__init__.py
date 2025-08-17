@@ -4,3 +4,7 @@ ERROR_STATUS     = ERROR_STATUS_INT.to_bytes(byteorder="little",length=number_of
 # 
 SUCCESS_STATUS_INT = 0
 SUCCESS_STATUS     = SUCCESS_STATUS_INT.to_bytes(byteorder="little",length=number_of_bytes,signed=True)
+
+MAGIC   = b"axo"
+PROTO   = b"v1"
+JSON_CT = b"application/json"

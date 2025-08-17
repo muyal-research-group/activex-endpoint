@@ -5,15 +5,17 @@ import asyncio
 import zmq.asyncio 
 import humanfriendly as HF
 from dotenv import load_dotenv
-from option import Some
-# 
-from axo_endpoint.controllers.mw import manager_worker
-# Activex 
+from option import Some,Result,Ok,Err
+from typing import List,Tuple
+# Axo
 from axo.endpoint.manager import DistributedEndpointManager
 from axo.endpoint.endpoint import DistributedEndpoint
 from axo.contextmanager import AxoContextManager
 from axo.runtime.local import LocalRuntime
 from axo.storage.data import MictlanXStorageService
+from axo.models import AxoRequestEnvelope
+from axo.enums import AxoOperationType
+from axo.errors import AxoErrorType,AxoError
 # Mictlanx
 from mictlanx.v4.asyncx import AsyncClient
 from mictlanx.logger.log import Log
@@ -28,9 +30,9 @@ import axo_endpoint.utils as U
 from axo_endpoint.store import LocalKVStore
 from axo_endpoint.interfaces import Heater
 from axo_endpoint.serde import DefaultSerde
-import axo_endpoint.constants as CONSTANTS
 from axo_endpoint.config import Config
-# globals()["Axo"] =Axo
+from axo_endpoint.interfaces import Task
+
 ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH",-1)
 if not ENV_FILE_PATH == -1:
     load_dotenv(ENV_FILE_PATH)
@@ -38,8 +40,6 @@ if not ENV_FILE_PATH == -1:
 
 
 config = Config()
-
-
 
 serde = DefaultSerde()
 
@@ -122,8 +122,6 @@ AXO_REQ_RES_URI =  config.AXO_HOSTNAME if config.AXO_REQ_RES_PORT == -1 else "{}
 req_rep_socket.bind("{}://{}".format(config.AXO_PROTOCOL,AXO_REQ_RES_URI))
 
 
-
-        
 heater = Heater(
     max_idle_time= config.AXO_HEATER_MAX_IDLE_TIME
 )
@@ -132,112 +130,411 @@ store = LocalKVStore()
 
 
 
+
+async def ping(socket:zmq.asyncio.Socket,task:Task,envolpe:AxoRequestEnvelope):
+    try:
+
+        t1 = T.time()
+        heater.warm(task_id=task.task_id)
+        # await send_success(req_rep_socket, "PONG")
+        logger.info({
+            "event":task.operation, 
+            "msg_id":envolpe.msg_id,
+            "task_id":task.task_id,
+            "endpoint": config.AXO_ENDPOINT_ID,
+            "service_time":T.time()-t1
+        })
+        await U.send_ok(
+            socket             = socket,
+            operation          = task.operation,
+            task_id            = task.task_id,
+            msg_id             = envolpe.msg_id,
+            envelope_overrides = {},
+            payload_frames     = [],
+        )
+        return Ok(None)
+    except Exception as e:
+        return Err(e)
+    
+
+
+async def put_metadata_op(
+    *,
+    socket: zmq.asyncio.Socket,
+    task: Task,
+    envelope: AxoRequestEnvelope,
+    store: LocalKVStore,
+    endpoint_manager: DistributedEndpointManager,
+    heater: Heater,
+    summoner: Summoner,
+) -> Result[None, Exception]:
+    try:
+        t0 = T.time()
+        heater.warm(task_id=task.task_id)
+
+        # Call your controller; it should NOT send on the socket
+        res = await put_metadata(
+            store            = store,
+            socket   = socket,           # kept for signature compatibility, but controller should not send
+            h                = heater,
+            endpoint_manager = endpoint_manager,
+            summoner         = summoner,
+            task             = task,
+        )
+        print("PUT_RES",res)
+
+        if res.is_err:
+            err = str(res.unwrap_err())
+            await U.send_error(
+                socket    = socket,
+                operation = task.operation,
+                task_id   = task.task_id,
+                message   = err,
+                error_type=AxoErrorType.INTERNAL_ERROR
+            )
+            return Err(Exception(err))
+
+        # Optionally echo stored key / object info in reply envelope
+        await U.send_ok(
+            socket=socket,
+            operation=task.operation,
+            task_id=task.task_id,
+            envelope_overrides={
+                "axo_uri": envelope.axo_uri,  
+                "method": None,
+            },
+        )
+
+        logger.info({
+            "event": task.operation,
+            "task_id": task.task_id,
+            "object_id": envelope.axo_uri,
+            "response_time": T.time() - t0,
+        })
+        return Ok(None)
+
+    except Exception as e:
+        await U.send_error(
+            socket    = socket,
+            operation = task.operation,
+            task_id   = task.task_id,
+            message   = str(e),
+            error_type=AxoErrorType.INTERNAL_ERROR
+        )
+        return Err(e)
+
+
+# ------------------------------------------------------------------------------
+# METHOD.EXEC
+# ------------------------------------------------------------------------------
+async def method_exec_op(
+    *,
+    socket: zmq.asyncio.Socket,
+    task: Task,
+    envelope: AxoRequestEnvelope,
+    store: LocalKVStore,
+    serde: DefaultSerde,
+    storage_service: AsyncClient,
+    endpoint_manager: DistributedEndpointManager,
+    heater: Heater,
+) -> Result[None, Exception]:
+    """
+    Controller should return:
+        Ok( (result_obj, patch_dict_or_none, post_version_or_none) )
+    The handler serializes result/patch into payload frames and replies with:
+        [MAGIC, PROTO, "METHOD.EXEC.REPLY", JSON_CT, reply_envelope_json, result_pickle, [patch_pickle]]
+    """
+    try:
+        t0 = T.time()
+        heater.warm(task_id=task.task_id)
+
+        # Call your execution controller (it must NOT send on the socket)
+        # Expected return shape for success:
+        #    Ok( (result_obj, patch_dict_or_none, post_version_or_none) )
+        exec_res = await method_exeution(
+            store=store,
+            req_rep_socket=socket,         # kept for signature; do not use to send
+            serde=serde,
+            storage_service=storage_service,
+            endpoint_manager=endpoint_manager,
+            heater=heater,
+            task=task,
+        )
+
+        if exec_res.is_err:
+            err_msg = str(exec_res.unwrap_err())
+            await U.send_error(
+                socket=socket,
+                operation=AxoOperationType.METHOD_EXEC,
+                # status="ERROR",
+                # status_code=-1,
+                task_id=task.task_id,
+                message=err_msg,
+                # envelope_overrides={
+                #     "object_id": envelope.axo_uri,
+                #     "method": envelope.method,
+                #     "pre_version": envelope.pre_version,
+                #     "error": {"type": "METHOD.EXEC", "message": err},
+                # },
+                payload_frames=[],
+            )
+            return Err(Exception(err_msg))
+
+        # # Unpack controller output
+        # result_obj, patch_dict, post_version = exec_res.unwrap()
+
+        # # Serialize payload frames
+        # result_bytes = CP.dumps(result_obj)
+        # payload_frames = [result_bytes]
+        # if patch_dict is not None:
+        #     payload_frames.append(CP.dumps(patch_dict))
+
+        await U.send_ok(
+            socket=socket,
+            operation="METHOD.EXEC",
+            task_id=task.task_id,
+            envelope_overrides={
+                "axo_uri": envelope.axo_uri,
+                "method": envelope.method,
+                "pre_version": envelope.pre_version,
+            }
+        )
+
+        logger.info({
+            "event": "METHOD.EXEC.REPLY",
+            "task_id": task.task_id,
+            "object_id": envelope.axo_uri,
+            "method": envelope.method,
+            "pre_version": envelope.pre_version,
+            # "post_version": post_version,
+            "response_time": T.time() - t0,
+        })
+        return Ok(None)
+
+    except Exception as e:
+        await U.send_error(
+            socket=socket,
+            operation=AxoOperationType.METHOD_EXEC,
+            task_id=task.task_id,
+            envelope_overrides={
+                "axo_uri": envelope.axo_uri,
+                "method": envelope.method,
+                "pre_version": envelope.pre_version,
+                "error": {"type": "EXCEPTION", "message": str(e)},
+            },
+        )
+        return Err(e)
+
+
+# ------------------------------------------------------------------------------
+# ELASTICITY (scale up/down / replicate endpoints)
+# ------------------------------------------------------------------------------
+async def create_endpoint(
+    *,
+    socket: zmq.asyncio.Socket,
+    task: Task,
+    envelope: AxoRequestEnvelope,
+    store: LocalKVStore,
+    serde: DefaultSerde,
+    storage_service: AsyncClient,
+    endpoint_manager_x: EndpointManager,   # your specialized manager for elasticity
+    heater: Heater,
+) -> Result[None, Exception]:
+    try:
+        t0 = T.time()
+        heater.warm(task_id=task.task_id)
+
+        # Call your elasticity controller (must not send on its own)
+        res = await elasticity(
+            store=store,
+            req_rep_socket=socket,        # keep for signature; avoid sending inside
+            serde=serde,
+            storage_service=storage_service,
+            endpoint_manager=endpoint_manager_x,
+            heater=heater,
+            task=task,
+        )
+
+        if res.is_err:
+            err_msg = str(res.unwrap_err())
+            await U.send_error(
+                socket     = socket,
+                operation  = AxoOperationType.CREATE_ENDPOINT,
+                task_id    = task.task_id,
+                error_type = AxoErrorType.INTERNAL_ERROR,
+                message    = err_msg
+            )
+            return Err(Exception(err_msg))
+
+        await U.send_ok(
+            socket             = socket,
+            operation          = AxoOperationType.CREATE_ENDPOINT,
+            task_id            = task.task_id,
+            envelope_overrides = {
+                "axo_uri": envelope.axo_uri,
+            },
+        )
+
+        logger.info({
+            "event": "ELASTICITY.REPLY",
+            "task_id": task.task_id,
+            "object_id": envelope.axo_uri,
+            "response_time": T.time() - t0,
+        })
+        return Ok(None)
+
+    except Exception as e:
+        await U.send_error(
+            socket     = socket,
+            operation  = AxoOperationType.CREATE_ENDPOINT,
+            task_id    = task.task_id,
+            error_type = AxoErrorType.INTERNAL_ERROR,
+            message    = str(e)
+        )
+        return Err(e)
+
+
+
+async def extract_task_envolope(socket:zmq.asyncio.Socket, )->Result[Tuple[Task,AxoRequestEnvelope,List[bytes]],AxoError]:
+    
+    try:
+        multipart = await socket.recv_multipart()
+        _start_time = T.time()
+        # Parse task
+        msg_result = U.from_multipart_to_task_and_envelope(multipart=multipart)
+        if msg_result.is_err:
+            e = msg_result.unwrap_err()
+            await U.send_error_axo(
+                socket    = socket,
+                operation = "UNKNOWN",
+                task_id   = "",
+                error     = e
+            )
+            return Err(e)
+
+        (task,envelope, frames) = msg_result.unwrap()
+        logger.debug({
+            "event": "TASK.RECEIVED",
+            "operation": task.operation,
+            "task_id": task.task_id,
+            "axo_bucket_id": task.get_axo_bucket_id(),
+            "axo_key": task.get_axo_key(),
+            "source_bucket_id": task.get_source_bucket_id(),
+            "sink_bucket_id": task.get_sink_bucket_id(),
+            "endpoint_id": task.get_endpoint_id(),
+            "dependencies": task.get_dependencies(),
+            **envelope.model_dump(),
+            "service_time":T.time()-_start_time
+        })
+        return Ok((task,envelope,frames))
+    except Exception as e:
+        await U.send_error(
+            socket     = req_rep_socket,
+            operation  = AxoOperationType.UNKNOWN,
+            task_id    = None,
+            error_type = AxoErrorType.INTERNAL_ERROR,
+            message    = str(e)
+        )
+        return Err(e)
+
 async def main_req_rep():
     global endpoint_manager
-    logger.debug("Server - Listen on {}://{}".format(config.AXO_PROTOCOL,AXO_REQ_RES_URI))
+    logger.debug(f"Server - Listen on {config.AXO_PROTOCOL}://{AXO_REQ_RES_URI}")
+
     while True:
+        t1 = T.time()
+
+        extract_msg_result = await extract_task_envolope(socket=req_rep_socket)
+        if extract_msg_result.is_err:
+            continue
+
+        (task,envelope,_) = extract_msg_result.unwrap()
+        
+
         try:
-            _start_time = T.time()
-            multipart   = await req_rep_socket.recv_multipart()
-            msg_result  = U.from_multipart_to_task(multipart=multipart)
-            if msg_result.is_err:
-                logger.error({
-                    "msg":str(msg_result.unwrap_err())
-                })
-                await req_rep_socket.send_multipart([b"activex",b"REQUEST.FAILED",CONSTANTS.ERROR_STATUS,b"{}",b""])
-                continue
-            task = msg_result.unwrap()
-            logger.debug({
-                "event":"TASK",
-                "operation":task.operation,
-                "task_id":task.task_id,
-                "axo_bucket_id":task.get_axo_bucket_id(),
-                "axo_key":task.get_axo_key(),
-                "source_bucket_id":task.get_source_bucket_id(),
-                "sink_bucket_id":task.get_sink_bucket_id(),
-                "endpoint_id":task.get_endpoint_id(),
-                "dependencies":task.get_dependencies(),
-            })
             if heater.is_cold():
                 logger.warning({
-                    "event":"DRAIN.ENDPOINT",
-                    "msg":"max_idle_timeout reached",
-                    "max_idle_timeout":HF.format_timespan(heater.max_idle_time),
+                    "event": "DRAIN.ENDPOINT",
+                    "msg": "max_idle_timeout reached",
+                    "max_idle_timeout": HF.format_timespan(heater.max_idle_time),
+                    "duration":heater.get_current_active_time()
                 })
                 sys.exit(0)
-            
 
-            # topic       = task.topic
-            operation   = task.operation
-            # print("OPERATION",operation)
-            # metadata    = task.metadata
-            if operation =="PUT.METADATA":
-                response = await put_metadata(
-                    req_rep_socket= req_rep_socket,
-                    h = heater,
-                    endpoint_manager=endpoint_manager,
-                    summoner=summoner,
-                    task=task,
-                    store=store
+            # Operation dispatch
+            op = task.operation
+
+            if op == AxoOperationType.PING:
+                response = await ping(socket=req_rep_socket,envolpe=envelope,task=task)
+            elif op == AxoOperationType.PUT_METADATA:
+                response = await put_metadata_op(
+                    socket           = req_rep_socket,
+                    task             = task,
+                    envelope         = envelope,
+                    store            = store,
+                    endpoint_manager = endpoint_manager,
+                    heater           = heater,
+                    summoner         = summoner,
                 )
-                if response.is_err:
-                    logger.error({
-                        "event":"PUT.METADATA.FAILED",
-                        "error":str(response.unwrap_err())
-                    })
-                    await req_rep_socket.send_multipart([b"activex",b"error",CONSTANTS.ERROR_STATUS, b"{}",b""])
-            elif operation == "MW":
-                await manager_worker(
+
+            elif op == AxoOperationType.METHOD_EXEC:
+                response = await method_exec_op(
+                    socket=req_rep_socket,
+                    task=task,
+                    envelope=envelope,
                     store=store,
-                    req_rep_socket=req_rep_socket,
                     serde=serde,
                     storage_service=mictlanx_client,
                     endpoint_manager=endpoint_manager,
                     heater=heater,
-                    task=task,
-                    config= config
                 )
-            elif operation =="METHOD.EXEC":
-                res = await method_exeution(
+
+            elif op == AxoOperationType.CREATE_ENDPOINT:
+                response = await create_endpoint(
+                    socket=req_rep_socket,
+                    task=task,
+                    envelope=envelope,
                     store=store,
-                    req_rep_socket=req_rep_socket,
                     serde=serde,
                     storage_service=mictlanx_client,
-                    endpoint_manager=endpoint_manager,
+                    endpoint_manager_x=endpoint_manager_x,
                     heater=heater,
-                    task=task
                 )
-            elif operation == "ELASTICITY":
-                res = await elasticity(
-                    store=store,
-                    req_rep_socket=req_rep_socket,
-                    serde=serde,
-                    storage_service=mictlanx_client,
-                    endpoint_manager=endpoint_manager_x,
-                    heater=heater,
-                    task=task,
-                    # summoner = summoner,
-                )
-            elif operation =="PING":
-                t1 = T.time()
-                heater.warm(task_id=task.task_id)
-                st = T.time() - t1
-                logger.debug({
-                    "envent":"PING",
-                    "endpoint":config.AXO_ENDPOINT_ID
-                })
-                await req_rep_socket.send_multipart([b"activex",b"PONG",CONSTANTS.SUCCESS_STATUS,b"{}",b""])
-                continue
+
             else:
-                await req_rep_socket.send_multipart([b"activex",b"UKNOWN.OPERATION",CONSTANTS.ERROR_STATUS,b"{}",b""])
-                continue
+                await U.send_error(
+                    socket=req_rep_socket,
+                    operation = task.operation,
+                    error_type=AxoErrorType.UNKNOWN_OPERATION,
+                    message=f"Unkown operation: {op}",
+                )
+            logger.info({
+                "event": "TASK.COMPLETED",
+                "operation": op,
+                "axo_bucket_id": task.get_axo_bucket_id(),
+                "axo_key": task.get_axo_key(),
+                "source_bucket_id": task.get_source_bucket_id(),
+                "sink_bucket_id": task.get_sink_bucket_id(),
+                "endpoint_id": task.get_endpoint_id(),
+                "dependencies": task.get_dependencies(),
+                **envelope.model_dump(),
+                "task_id":task.task_id,
+                "service_time": T.time() - t1
+            })
+
         except Exception as e:
-            logger.error(str(e))
-            await req_rep_socket.send_multipart([b"activex",b"INTERNAL.ENDPOINT.ERROR",CONSTANTS.ERROR_STATUS,b"{}",b""])
+            await U.send_error(
+                socket= req_rep_socket,
+                task_id=task.task_id,
+                operation=task.operation,
+                error_type=AxoErrorType.INTERNAL_ERROR,
+                message=str(e)
+            )
 
 
 
-    
+
+
 async def run_heater():
     HEATER_TICK_TIME = HF.parse_timespan(config.AXO_HEATER_TICK_TIME)
     logger.debug({

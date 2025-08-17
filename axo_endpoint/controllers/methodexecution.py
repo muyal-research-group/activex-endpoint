@@ -19,48 +19,38 @@ from axo_endpoint.store import KVStore
 # from axo_endpoint.controllers import put_metadata
 from axo_endpoint.serde import Serde
 import axo_endpoint.constants as CONSTANTS
+from axo.log import get_logger
+from axo.helpers import _generate_id
 # 
 from mictlanx.v4.asyncx import AsyncClient as MictlanXClient
-# from mictlanx.v4.interfaces import GetBytesResponse,Metadata
 import mictlanx.v4.interfaces as InterfaceX
 import mictlanx.v4.models as ModelX
 from mictlanx.logger.log import Log
 # from activex.storage.data import StorageService
-ALPHABET = string.ascii_lowercase+string.digits
+# ALPHABET = string.ascii_lowercase+string.digits
 
 AXO_ENDPOINT_IMAGE  = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
 AXO_ENDPOINT_ID     = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
 AXO_LOGGER_PATH     = os.environ.get("AXO_LOGGER_PATH","/log")
-AXO_LOGGER_WHEN     = os.environ.get("AXO_LOGGER_WHEN","h")
-AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL","24"))
 AXO_SINK_PATH                 = os.environ.get("AXO_SINK_PATH","/sink")
-AXO_SOURCE_PATH               = os.environ.get("AXO_SOURCE_PATH","/source")
-AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG","1")))
-logger = Log(
-    console_handler_filter=lambda x: AXO_DEBUG,
-    create_folder=True,
-    error_log=True,
-    name="activex.method_exeution",
-    path=AXO_LOGGER_PATH,
-    when=AXO_LOGGER_WHEN,
-    interval=AXO_LOGGER_INTERVAL,
-)
+
+
+
+logger = get_logger(name=__name__,path=AXO_LOGGER_PATH,ltype="JSON")
+
 def __axo_method(f):
     def __inner(*args,**kwargs):
-        # print("ARGSSSSSSSS",args,kwargs)
-        # start = 1
-        # if len(args) == 1:
-            # start = 0
-            
-        # _args = args[start:]
-        # print("SELECTED_ARGS", _args)
-        logger.debug({
-            "event":"__AXO_METHOD",
-            "fname":f.__name__,
-            "args":",".join(map(str,args)),
-            **kwargs
-        })
-        return f(*args,**kwargs)
+        try:
+            logger.debug({
+                "event":"__AXO_METHOD",
+                "fname":f.__name__,
+                "args":",".join(map(str,args)),
+                **kwargs
+            })
+            return Ok(f(*args,**kwargs))
+        except Exception as e:
+            logger.error({"event":"FAILED.__AXO_METHOD","detail":str(e)})
+            return Err(e)
     return __inner
 
 
@@ -264,7 +254,6 @@ async def __method_execution(
             bucket_id=axo_bucket_id,
             key=f"{axo_key}_source_code"
         )
-        print("SOURCE_CODE_GET_RES", obj_result_get_response)
         if obj_result_get_response.is_err:
             error_msg = "Get source code failed"
             logger.error({
@@ -285,21 +274,21 @@ async def __method_execution(
             return Err(Exception(error_msg))
 
         # _______________________________________________________________________________________
-        get_obj_response = obj_result_get_response.unwrap()
-        source_code = CP.loads(get_obj_response.data.tobytes())
-        attrs_response = attrs_result_get_response.unwrap()
-        attrs = CP.loads(attrs_response.data.tobytes())
+        get_obj_response           = obj_result_get_response.unwrap()
+        source_code                = CP.loads(get_obj_response.data.tobytes())
+        attrs_response             = attrs_result_get_response.unwrap()
+        attrs                      = CP.loads(attrs_response.data.tobytes())
         mod                        = types.ModuleType("__axo_dynamic__")
         mod.__dict__["Axo"]        = Axo
         mod.__dict__["axo_method"] = __axo_method
-        class_name = get_obj_response.metadatas[0].tags.get("axo_class_name")
+        class_name                 = get_obj_response.metadatas[0].tags.get("axo_class_name")
         exec(source_code, mod.__dict__)
         X = getattr(mod,class_name)
         obj = X(**attrs)
         # GET SOURCE BUCKET
+        t1_get_source_bucket = T.time()
         # _______________________________________________________________________________________
         bucket_result = await storage_service.get_bucket_metadata(bucket_id=source_bucket_id)
-        print("BUCKET_REUSLT",bucket_result)
         if bucket_result.is_err:
             error_msg = "Get bucket failed"
             logger.error({
@@ -309,28 +298,56 @@ async def __method_execution(
             })
             await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",error_msg.encode()])
             return Err(Exception(error_msg))        
-
         bucket = bucket_result.unwrap()
-        for k,b in bucket.balls.items():
-            print(b.checksum,axo_sink_path_sink_bucket_id_path)
+        logger.info({
+            "event":"GET.BUCKET",
+            "bucket_id":source_bucket_id,
+            "response_time":T.time()-t1_get_source_bucket
+        })
 
+        for k,b in bucket.balls.items():
+            t1_get_ball = T.time()
+            logger.info({
+                "event":"GET.BALL",
+                "bucket_id":source_bucket_id,
+                "ball_id":b.ball_id,
+                "response_time":T.time()-t1_get_ball,
+                "sink_path":axo_sink_path_sink_bucket_id_path
+            })
 
         f = getattr(obj, task.metadata.get("fname"))
+
+
         for attr_name, attr_value in attrs.items():
             setattr(obj, attr_name, attr_value) 
-        print(task.fargs,task.fkwargs)
+        # print("ATTRS",type(attrs),"VALUE",attrs)
+        logger.debug({
+            "event":"OBJECT.METADATA",
+            "args":list(map(str,task.fargs)),
+            "kwargs":U.dict_any_to_dict_str(task.fkwargs),
+            "attrs":U.dict_any_to_dict_str(attrs)
+            # **(dict(list(map(lambda x: (x[0],str(x[1])),task.fkwargs.items()))))
+        })
+        f_result:Result[Any, Exception]       = f(*task.fargs,**task.fkwargs)
+
+        if f_result.is_err:
+            msg = f"Failed to execute: {f.__name__}"
+            logger.error({"event":"FAILED.METHOD.EXECUTION","detail":msg})
+            return Err(Exception(msg))
         
-        result       = f(*task.fargs)
-        print("RESULT",result)
+        
+        result  = f_result.unwrap()
         result_bytes = CP.dumps(result)
-        result_key = nanoid()
-        res = await storage_service.put(
+        result_key = _generate_id(val=None,size=12)
+
+        f_result_result = await storage_service.put(
             bucket_id = sink_bucket_id,
             key       =result_key ,
             value=result_bytes,
         )
-        print(res)
-        if res.is_ok:
+
+
+        if f_result_result.is_ok:
             result_metadata = {
                 "result_key":result_key
             }
@@ -338,7 +355,7 @@ async def __method_execution(
             await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",CONSTANTS.SUCCESS_STATUS,result_metadata_bytes, result_bytes ])
             return Ok(True)
         else:
-            error_msg = "Failed to store the result"
+            error_msg = f"Failed to store the {task.metadata.get('fname','fx')} result"
             logger.error({
                 "error":error_msg,
             })
