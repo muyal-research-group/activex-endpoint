@@ -19,12 +19,15 @@ from mictlanx.v4.summoner.summoner import Summoner ,SummonContainerPayload,Expos
 from mictlanx.interfaces.payloads import MountX
 # 
 from axo_endpoint.interfaces import Task
+from axo_endpoint.config import Config
 #
 from axo.models import AxoRequestEnvelope
 from axo.log import get_logger
 from axo.core.constants import *
 from axo.models import AxoReplyEnvelope
+from axo.enums import AxoOperationType
 from axo.errors import AxoError, AxoErrorType
+from axo.endpoint.endpoint import DistributedEndpoint
 
 AXO_ENDPOINT_ID   = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
 AXO_SUMMONER_MODE = os.environ.get("AXO_SUMMONER_MODE","docker")
@@ -196,7 +199,7 @@ def from_multipart_to_task_and_envelope(
             return Err(
                 AxoError.make(
                     error_type = AxoErrorType.BAD_REQUEST,
-                    msg        = f"Malformed multipart: expected ≥5 frames, got {len(multipart)}"
+                    msg        = f"Malformed multipart: expected > 5 frames, got {len(multipart)}"
                 )
             )
 
@@ -222,7 +225,7 @@ def from_multipart_to_task_and_envelope(
         metadata: Dict[str, Any] = envelope.model_dump()
 
         # METHOD.EXEC requires exactly 2 payload frames: fargs, fkwargs
-        if operation == "METHOD.EXEC":
+        if operation == AxoOperationType.METHOD_EXEC:
             if len(payload) != 2:
                 return Err(
                     AxoError.make(
@@ -233,6 +236,7 @@ def from_multipart_to_task_and_envelope(
             try:
                 fargs = CP.loads(payload[0])
                 fkwargs = CP.loads(payload[1])
+                print("FARGS",fargs)
             except Exception as e:
                 return Err(AxoError.make(msg= f"Failed to deserialize METHOD.EXEC args/kwargs: {e}", error_type=AxoErrorType.BAD_REQUEST))
 
@@ -328,6 +332,8 @@ def install_packages(packages:List[str]=0)->Result[int, Exception]:
 def deploy_endpoint(
         summoner:Summoner,
         endpoint_id:str,
+        config:Config,
+        endpoints:List[str]=[],
         cpu_count:int=2,
         memory:str="1GB",
         selected_node:str="0",
@@ -335,7 +341,7 @@ def deploy_endpoint(
         pubsub_port:int=16666,
         req_res_port:int=16667,
         hostname:str="*",
-        image:str= "nachocode/activex:endpoint"
+        image:str= "nachocode/axo:endpoint-0.0.1a4"
 ):
     start_time = T.time()
     try:
@@ -344,32 +350,49 @@ def deploy_endpoint(
             image= image,
             cpu_count=cpu_count,
             envs={
+                # AXO core
                 "AXO_ENDPOINT_ID": endpoint_id,
                 "AXO_ENDPOINT_DEPENDENCIES": ";".join(dependencies),
-                "AXO_LOGGER_PATH": "/log",
-                "AXO_LOGGER_WHEN": "h",
-                "AXO_LOGGER_INTERVAL": "24",
+                "AXO_LOGGER_PATH": config.AXO_LOGGER_PATH,
+                "AXO_LOGGER_WHEN": config.AXO_LOGGER_WHEN,
+                "AXO_LOGGER_INTERVAL": config.AXO_LOGGER_INTERVAL,
+                "AXO_SYNC_MAX_IDLE_TIME": config.AXO_SYNC_MAX_IDLE_TIME,
+                "AXO_HEATER_TICK_TIME": config.AXO_HEATER_TICK_TIME,
+                "AXO_SINK_PATH": config.AXO_SINK_PATH,
+                "AXO_SOURCE_PATH": config.AXO_SOURCE_PATH,
+                "AXO_DATA_PATH": config.AXO_DATA_PATH,
                 "AXO_ENDPOINT_IMAGE": image,
-                "AXO_PROTOCOL": "tcp",
-                "AXO_PUB_SUB_PORT":str(pubsub_port),
+                "AXO_PROTOCOL": config.AXO_PROTOCOL,
+                "AXO_PUB_SUB_PORT": str(pubsub_port),
                 "AXO_REQ_RES_PORT": str(req_res_port),
                 "AXO_HOSTNAME": hostname,
-                "MICTLANX_XOLO_IP_ADDR": "mictlanx-xolo-0",
-                "MICTLANX_XOLO_API_VERSION": "3",
-                "MICTLANX_XOLO_NETWORK": "10.0.0.0/25",
-                "MICTLANX_XOLO_PORT": "15000",
-                "MICTLANX_XOLO_MODE":AXO_SUMMONER_MODE,
-                "MICTLANX_XOLO_PROTOCOL": "http",
-                "MICTLANX_CLIENT_ID":endpoint_id,
-                "MICTLANX_BUCKET_ID": "activex",
-                "MICTLANX_DEBUG": "0",
-                "MICTLANX_LOG_INTERVAL": "24",
-                "MICTLANX_LOG_WHEN": "h",
-                "MICTLANX_LOG_OUTPUT_PATH": "/log",
-                "MICTLANX_MAX_WORKERS": "4",
-                "MICTLANX_ROUTERS": "mictlanx-router-0:mictlanx-router-0:60666",
-                "NODE_IP_ADDR":endpoint_id,
-                "NODE_PORT":str(req_res_port),
+                "AXO_SUBSCRIBER_HOSTNAME": config.AXO_SUBSCRIBER_HOSTNAME,
+                "AXO_ENDPOINTS": " ".join(endpoints),
+                "AXO_HEATER_MAX_IDLE_TIME": config.AXO_HEATER_MAX_IDLE_TIME,
+                "AXO_DEBUG": config.AXO_DEBUG,  # default true
+                "AXO_METADATA_TIMEOUT": config.AXO_METADATA_TIMEOUT,
+
+                # MictlanX Summoner
+                "MICTLANX_SUMMONER_IP_ADDR": config.MICTLANX_SUMMONER_IP_ADDR,
+                "MICTLANX_SUMMONER_API_VERSION": config.MICTLANX_SUMMONER_API_VERSION,
+                "MICTLANX_SUMMONER_NETWORK": config.MICTLANX_SUMMONER_NETWORK,
+                "MICTLANX_SUMMONER_PORT": config.MICTLANX_SUMMONER_PORT,
+                "MICTLANX_SUMMONER_PROTOCOL": config.MICTLANX_SUMMONER_PROTOCOL,
+                "MICTLANX_SUMMONER_MODE": config.MICTLANX_SUMMONER_MODE,
+
+                # MictlanX client / bucket / routers
+                "MICTLANX_BUCKET_ID": config.MICTLANX_BUCKET_ID,
+                "MICTLANX_ROUTERS": config.MICTLANX_ROUTERS,
+                "MICTLANX_CLIENT_ID": endpoint_id,
+                "MICTLANX_DEBUG": config.MICTLANX_DEBUG,
+                "MICTLANX_LOG_INTERVAL": config.MICTLANX_LOG_INTERVAL,
+                "MICTLANX_LOG_WHEN": config.MICTLANX_LOG_WHEN,
+                "MICTLANX_LOG_OUTPUT_PATH": config.MICTLANX_LOG_OUTPUT_PATH,
+                "MICTLANX_MAX_WORKERS": config.MICTLANX_MAX_WORKERS,
+
+                # Aliases
+                "NODE_IP_ADDR": endpoint_id,
+                "NODE_PORT": str(req_res_port),
             },
             exposed_ports=[
                 ExposedPort(host_port=pubsub_port,container_port=pubsub_port,ip_addr=NONE, protocolo=NONE),
@@ -379,8 +402,8 @@ def deploy_endpoint(
             hostname=endpoint_id,
             ip_addr=Some(endpoint_id),
             labels={
-                "activex":"",
-                "activex.type":"endpoint"
+                "axo":"",
+                "axo.type":"endpoint"
             },
             memory=HF.parse_size(memory),
             mounts=[
@@ -395,7 +418,7 @@ def deploy_endpoint(
                     mount_type=1,
                 ),
             ],
-            network_id="mictlanx",
+            network_id=config.AXO_NETWORK_ID,
             selected_node=Some(selected_node),
             shm_size=NONE,
         )
@@ -417,3 +440,56 @@ def deploy_endpoint(
             "req_res_port":req_res_port,
             "pubsub_port":pubsub_port
         })
+
+
+async def __deploy_endpoint(
+        summoner:Summoner,
+        endpoint_id:str,
+        req_res_port:int, 
+        pubsub_port:int,
+        config:Config,
+        dependencies:List[str]=[],
+        image:str = "nachocode/axo:endpoint-0.0.1a4"
+):
+    try:
+        deploy_endpoint_start_time = T.time()
+
+        # pubsub_port = endpoint_manager.get_available_pubsub_port()
+        # req_res_port= endpoint_manager.get_available_req_res_port()
+        logger.debug({
+            "event":"DEPLOY.ENDPOINT",
+            "endpoint_id":endpoint_id,
+            "pubsub_port":pubsub_port,
+            "req_res_port":req_res_port
+        })
+        endpoint_deploy_result = deploy_endpoint(
+            summoner=summoner,
+            config= config,
+            endpoint_id=endpoint_id,
+            pubsub_port=pubsub_port,
+            req_res_port=req_res_port,
+            dependencies=dependencies,
+            image=image
+
+        )
+        if endpoint_deploy_result.is_ok:
+            container_endpoint = endpoint_deploy_result.unwrap()
+            logger.info({
+                "event":"DEPLOY.ENDPOINT",
+                "endpoint_id":endpoint_id,
+                "response_time":T.time() - deploy_endpoint_start_time
+            })
+            return Ok(DistributedEndpoint(endpoint_id=endpoint_id, hostname=container_endpoint.ip_addr, req_res_port=req_res_port,pubsub_port=pubsub_port))
+        
+        else:
+            e = endpoint_deploy_result.unwrap_err()
+            logger.error({
+                "error":"DEPLOY.ENDPOINT.FAILED",
+                "msg":str(e),
+                "endpoint_id":endpoint_id,
+                "req_res_port":req_res_port,
+                "pubsub_port":pubsub_port
+            })
+            return Err(e)
+    except Exception as e:
+        return Err(e)

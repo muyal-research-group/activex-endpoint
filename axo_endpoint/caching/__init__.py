@@ -1,50 +1,45 @@
-from typing import Dict
+from typing import Dict,Optional
 from abc import ABC,abstractmethod
 import heapq
 from collections import OrderedDict
+from axo.core.models import MetadataX
+
 
 class EvictionPolicy(ABC):
-
-    # @abstractmethod
-    def attach_cache(self, cache:Dict[str, memoryview]):
+    def attach_cache(self, cache: "Cache"):
         self.cache = cache
-        self.data = {}
 
     @abstractmethod
-    def access(self, key):
+    def access(self, key: str):
         raise NotImplementedError
-    
+
     @abstractmethod
-    def evict(self):
+    def evict(self) -> Optional[str]:
         raise NotImplementedError
+
 
 class Cache:
-    def __init__(self, capacity:int, eviction_policy:EvictionPolicy):
+    def __init__(self, capacity: int, eviction_policy: EvictionPolicy):
         self.capacity = capacity
         self.eviction_policy = eviction_policy
-        self.cache:Dict[str, memoryview] = {}
+        self.cache: Dict[str, MetadataX] = {}
         self.eviction_policy.attach_cache(self)
 
     @staticmethod
-    def lru(capacity:int=1000):
-        return Cache(
-            capacity=capacity,
-            eviction_policy=LRU()
-        )
-    @staticmethod
-    def lfu(capacity:int=1000):
-        return Cache(
-            capacity=capacity,
-            eviction_policy=LFU()
-        )
+    def lru(capacity: int = 1000):
+        return Cache(capacity=capacity, eviction_policy=LRU())
 
-    def get(self, key:str):
+    @staticmethod
+    def lfu(capacity: int = 1000):
+        return Cache(capacity=capacity, eviction_policy=LFU())
+
+    def get(self, key: str):
         if key in self.cache:
             self.eviction_policy.access(key)
             return self.cache[key]
         return None
 
-    def put(self, key:str, value:memoryview):
+    def put(self, key: str, value: object):
         if key not in self.cache and len(self.cache) >= self.capacity:
             evict_key = self.eviction_policy.evict()
             if evict_key:
@@ -55,11 +50,12 @@ class Cache:
     def __repr__(self):
         return f"{self.cache}"
 
+
 class LRU(EvictionPolicy):
     def __init__(self):
         self.order = OrderedDict()
 
-    def access(self, key:str):
+    def access(self, key: str):
         if key in self.order:
             self.order.move_to_end(key)
         else:
@@ -70,16 +66,16 @@ class LRU(EvictionPolicy):
         del self.order[oldest]
         return oldest
 
+
 class LFU(EvictionPolicy):
     def __init__(self):
-        self.freq:Dict[str,float] = {}
+        self.freq: Dict[str, int] = {}
         self.min_heap = []
         self.index = 0
 
-    def access(self, key:str):
+    def access(self, key: str):
         current_freq = self.freq.setdefault(key, 0)
-        self.freq[key] = current_freq+1
-
+        self.freq[key] = current_freq + 1
         heapq.heappush(self.min_heap, (self.freq[key], self.index, key))
         self.index += 1
 
@@ -90,4 +86,3 @@ class LFU(EvictionPolicy):
                 del self.freq[key]
                 return key
         return None
-

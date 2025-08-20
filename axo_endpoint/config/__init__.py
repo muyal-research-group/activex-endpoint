@@ -3,7 +3,6 @@ from mictlanx.utils.index import Utils as MictlanXUtils
 
 class Config:
     def __init__(self):
-        self.AXO_CLASSES_REPOSITORY = os.environ.get("AXO_CLASSES_REPOSITORY", "/home/nacho/Programming/Python/activex-endpoint/classes")
         self.AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID", "axo-endpoint-0")
         self.AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH", "/log")
         self.AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN", "h")
@@ -14,7 +13,7 @@ class Config:
         self.AXO_SINK_PATH = os.environ.get("AXO_SINK_PATH", "/sink")
         self.AXO_SOURCE_PATH = os.environ.get("AXO_SOURCE_PATH", "/source")
         self.AXO_DATA_PATH = os.environ.get("AXO_DATA_PATH", "/data")
-        self.AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE", "nachocode/activex:endpoint-0.0.22-alpha")
+        self.AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE", "nachocode/axo:endpoint-0.0.1a4")
         self.AXO_ENDPOINT_DEPENDENCIES_STR = os.environ.get("AXO_ENDPOINT_DEPENDENCIES", "")
         self.AXO_ENDPOINT_DEPENDENCIES = list(filter(lambda x: len(x) > 0, self.AXO_ENDPOINT_DEPENDENCIES_STR.split(";")))
         self.AXO_PROTOCOL = os.environ.get("AXO_PROTOCOL", "tcp")
@@ -26,12 +25,12 @@ class Config:
         self.AXO_ENDPOINTS = list(filter(lambda x: len(x) > 0, self.AXO_ENDPOINTS_STR))
         self.AXO_HEATER_MAX_IDLE_TIME = os.environ.get("AXO_HEATER_MAX_IDLE_TIME", "1h")
         
-        self.MICTLANX_XOLO_IP_ADDR = os.environ.get("MICTLANX_XOLO_IP_ADDR", "localhost")
-        self.MICTLANX_XOLO_API_VERSION = os.environ.get("MICTLANX_XOLO_API_VERSION", "3")
-        self.MICTLANX_XOLO_NETWORK = os.environ.get("MICTLANX_XOLO_NETWORK", "10.0.0.0/25")
-        self.MICTLANX_XOLO_PORT = os.environ.get("MICTLANX_XOLO_PORT", "15000")
-        self.MICTLANX_XOLO_PROTOCOL = os.environ.get("MICTLANX_XOLO_PROTOCOL", "http")
-        self.MICTLANX_XOLO_MODE = os.environ.get("MICTLANX_XOLO_MODE", "docker")
+        self.MICTLANX_SUMMONER_IP_ADDR = os.environ.get("MICTLANX_SUMMONER_IP_ADDR", "localhost")
+        self.MICTLANX_SUMMONER_API_VERSION = os.environ.get("MICTLANX_SUMMONER_API_VERSION", "3")
+        self.MICTLANX_SUMMONER_NETWORK = os.environ.get("MICTLANX_SUMMONER_NETWORK", "10.0.0.0/25")
+        self.MICTLANX_SUMMONER_PORT = os.environ.get("MICTLANX_SUMMONER_PORT", "15000")
+        self.MICTLANX_SUMMONER_PROTOCOL = os.environ.get("MICTLANX_SUMMONER_PROTOCOL", "http")
+        self.MICTLANX_SUMMONER_MODE = os.environ.get("MICTLANX_SUMMONER_MODE", "docker")
         
         self.MICTLANX_BUCKET_ID = os.environ.get("MICTLANX_BUCKET_ID", "activex")
         self.MICTLANX_ROUTERS = os.environ.get("MICTLANX_ROUTERS", "mictlanx-router-0:localhost:60666")
@@ -42,7 +41,8 @@ class Config:
         self.MICTLANX_LOG_WHEN = os.environ.get("MICTLANX_LOG_WHEN", "h")
         self.MICTLANX_LOG_OUTPUT_PATH = os.environ.get("MICTLANX_LOG_OUTPUT_PATH", "/log")
         self.MICTLANX_MAX_WORKERS = int(os.environ.get("MICTLANX_MAX_WORKERS", "4"))
-
+        self.AXO_METADATA_TIMEOUT: int = int(os.environ.get("AXO_METADATA_TIMEOUT","30"))  # seconds (tune as needed)
+        self.AXO_NETWORK_ID:str = os.environ.get("AXO_NETWORK_ID","mictlanx")
     def update(self, **kwargs):
         for key, value in kwargs.items():
             if hasattr(self, key):

@@ -1,38 +1,41 @@
 import os
 import zmq
 import time as T
-import json as J
 import string
 import types
 import cloudpickle as CP
+import inspect
 
 from option import Result,Ok,Err,Some,NONE
 from typing import Any,Dict,List
 from nanoid import generate as nanoid 
 
 from axo import Axo
+from axo.errors import AxoError,AxoErrorType
+from axo.models import AxoRequestEnvelope,MetadataX
+from axo.log import get_logger
+from axo.helpers import _generate_id
+from axo.enums import AxoOperationType
+# 
+from axo_endpoint.config import Config
 import axo_endpoint.utils as U
 from axo_endpoint.interfaces import Heater,Task
 from axo_endpoint.utils import install_packages
 from axo.endpoint.manager import DistributedEndpointManager
 from axo_endpoint.store import KVStore
-# from axo_endpoint.controllers import put_metadata
+from axo_endpoint.store.models import MetadataKey
 from axo_endpoint.serde import Serde
 import axo_endpoint.constants as CONSTANTS
-from axo.log import get_logger
-from axo.helpers import _generate_id
 # 
 from mictlanx.v4.asyncx import AsyncClient as MictlanXClient
+from mictlanx.v4.summoner.summoner import Summoner
 import mictlanx.v4.interfaces as InterfaceX
 import mictlanx.v4.models as ModelX
-from mictlanx.logger.log import Log
-# from activex.storage.data import StorageService
-# ALPHABET = string.ascii_lowercase+string.digits
 
-AXO_ENDPOINT_IMAGE  = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
-AXO_ENDPOINT_ID     = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
-AXO_LOGGER_PATH     = os.environ.get("AXO_LOGGER_PATH","/log")
-AXO_SINK_PATH                 = os.environ.get("AXO_SINK_PATH","/sink")
+AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
+AXO_ENDPOINT_ID    = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
+AXO_LOGGER_PATH    = os.environ.get("AXO_LOGGER_PATH","/log")
+AXO_SINK_PATH      = os.environ.get("AXO_SINK_PATH","/sink")
 
 
 
@@ -162,8 +165,10 @@ async def __method_execution(
         serde:Serde,
         storage_service:MictlanXClient,
         store:KVStore,
-        req_rep_socket:zmq.Socket,
-        task:Task)->Result[Any, Exception]:
+        socket:zmq.Socket,
+        task:Task,
+        envelope:AxoRequestEnvelope,
+)->Result[Any, AxoError]:
     start_time       = T.time()
     axo_key          = task.get_axo_key()
     axo_bucket_id    = task.get_axo_bucket_id()
@@ -179,20 +184,13 @@ async def __method_execution(
         "axo_sink_bucket_id":sink_bucket_id
     })
     try:
-        # axo_key validation _______________________________________________________________________________________
-        if axo_key == -1:
-            error_msg = "Key not found in metadata"
-            logger.error({
-                "msg":error_msg,
-                "operation":"METHOD.EXEC"
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",b""])
-            return Err(Exception(error_msg))
-        # _______________________________________________________________________________________
 
         # _______________________________________________________________________________________
-        maybe_mictlanx_metadata = store.get(key=axo_key)
-        if maybe_mictlanx_metadata.is_none:
+        _key = MetadataKey(id = envelope.axo_key,version=envelope.axo_version,alias=envelope.axo_alias)
+
+        maybe_metadata = store.get(key=_key)
+        print("MAYBE_METADATRA", maybe_metadata)
+        if maybe_metadata.is_none:
             logger.warning({
                 "event":"LOCAL.NOT.FOUND",
                 "axo_bucket_id":axo_bucket_id,
@@ -206,15 +204,10 @@ async def __method_execution(
             print(get_metadata_result)
             # Check if get_metadata got an error_____________________________________________
             if get_metadata_result.is_err:
-                error_msg = "{} not found".format(axo_key)
-                logger.error({
-                    "event":"GET.METADATA.FAILED",
-                    "error":error_msg,
-                    "axo_bucket_id":axo_bucket_id,
-                    "key":axo_key
-                })
-                await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",b""])
-                return Err(Exception(error_msg))
+                error_msg = f"Metadata not found: {axo_key}"
+                e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
+                await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
+                return Err(e)
             # _______________________________________________________________________________________
 
             remote_metadata = get_metadata_result.unwrap()
@@ -228,50 +221,26 @@ async def __method_execution(
             # await put_metadata()
             local_tags = remote_metadata.chunks[0].tags
             store.put(key=axo_key, value=local_tags )
-            maybe_mictlanx_metadata = Some(local_tags)
+            maybe_metadata = Some(MetadataX.model_validate(local_tags))
         
-        local_metadata = maybe_mictlanx_metadata.unwrap()
-        module         = local_metadata.get("axo_module",-1)
-        name           = local_metadata.get("axo_name",-1)
-        # add_dummy_module(module, name, Dummy)
-        # _______________________________________________________________________________________
-        if module == -1 or name == -1:
-            error_msg = "module or name attribute not found in tags"
-            logger.error({
-                "event":"MODULE.OR.NAME.NOT.FOUND",
-                "msg":error_msg,
-                "bucket_id":axo_bucket_id,
-                "key":axo_key,
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",b""])
-            return Err(Exception(error_msg))
-        # _______________________________________________________________________________________
-        mictlanx_get_start_time =  T.time()
-
+        local_metadata            = maybe_metadata.unwrap()
+        mictlanx_get_start_time   = T.time()
         attrs_result_get_response = await storage_service.get(bucket_id=axo_bucket_id, key=f"{axo_key}_attrs")
-
-        obj_result_get_response = await storage_service.get(
+        obj_result_get_response   = await storage_service.get(
             bucket_id=axo_bucket_id,
             key=f"{axo_key}_source_code"
         )
+
         if obj_result_get_response.is_err:
-            error_msg = "Get source code failed"
-            logger.error({
-                "msg":error_msg, 
-                "bucket_id":axo_bucket_id,
-                "key":axo_key
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",error_msg.encode()])
-            return Err(Exception(error_msg))
+            e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get source code failed")
+            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
+            return Err(e)
+
+        
         if attrs_result_get_response.is_err:
-            error_msg = "Get attributes failed"
-            logger.error({
-                "msg":error_msg, 
-                "bucket_id":axo_bucket_id,
-                "key":axo_key
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",error_msg.encode()])
-            return Err(Exception(error_msg))
+            e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get attributes failed")
+            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
+            return Err(e)
 
         # _______________________________________________________________________________________
         get_obj_response           = obj_result_get_response.unwrap()
@@ -290,14 +259,11 @@ async def __method_execution(
         # _______________________________________________________________________________________
         bucket_result = await storage_service.get_bucket_metadata(bucket_id=source_bucket_id)
         if bucket_result.is_err:
-            error_msg = "Get bucket failed"
-            logger.error({
-                "msg":error_msg, 
-                "bucket_id":axo_bucket_id,
-                "key":axo_key
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",error_msg.encode()])
-            return Err(Exception(error_msg))        
+            error_msg = f"Get bucket failed: {source_bucket_id}"
+            e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
+            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
+            return Err(e)
+     
         bucket = bucket_result.unwrap()
         logger.info({
             "event":"GET.BUCKET",
@@ -315,7 +281,12 @@ async def __method_execution(
                 "sink_path":axo_sink_path_sink_bucket_id_path
             })
 
-        f = getattr(obj, task.metadata.get("fname"))
+        
+
+        f      = getattr(obj, envelope.method )
+        base_f = inspect.unwrap(f)
+        f      = __axo_method(base_f)
+
 
 
         for attr_name, attr_value in attrs.items():
@@ -329,86 +300,89 @@ async def __method_execution(
             # **(dict(list(map(lambda x: (x[0],str(x[1])),task.fkwargs.items()))))
         })
         f_result:Result[Any, Exception]       = f(*task.fargs,**task.fkwargs)
-
+        # print("F_RESULT",f_result)
         if f_result.is_err:
             msg = f"Failed to execute: {f.__name__}"
-            logger.error({"event":"FAILED.METHOD.EXECUTION","detail":msg})
-            return Err(Exception(msg))
+            e   = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR, msg=msg)
+            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
+            return Err(e)
         
-        
-        result  = f_result.unwrap()
+        #  THIS IS THE PART THAT WE NEED TO CHANGE THE VERSION. 
+        result       = f_result.unwrap()
         result_bytes = CP.dumps(result)
-        result_key = _generate_id(val=None,size=12)
+        result_key   = _generate_id(val=None,size=12)
 
-        f_result_result = await storage_service.put(
+        f_result_put_result = await storage_service.put(
             bucket_id = sink_bucket_id,
-            key       =result_key ,
-            value=result_bytes,
+            key       = result_key,
+            value     = result_bytes,
         )
 
 
-        if f_result_result.is_ok:
-            result_metadata = {
-                "result_key":result_key
-            }
-            result_metadata_bytes = CP.dumps(result_metadata)
-            await req_rep_socket.send_multipart([b"activex",b"METHOD.EXEC.COMPLETED",CONSTANTS.SUCCESS_STATUS,result_metadata_bytes, result_bytes ])
+        if f_result_put_result.is_ok:
+            await U.send_ok(
+                socket=socket,
+                msg_id=envelope.msg_id,
+                operation=AxoOperationType.METHOD_EXEC,
+                task_id=envelope.task_id,
+                payload_frames=[result_bytes]
+            )
             return Ok(True)
         else:
             error_msg = f"Failed to store the {task.metadata.get('fname','fx')} result"
-            logger.error({
-                "error":error_msg,
-            })
-            await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",error_msg.encode()])
-            return Err(Exception(error_msg))
+            e = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR,msg=error_msg)
+            await U.send_error_axo(socket=socket,operation=envelope.operation,task_id=envelope.task_id,msg_id=envelope.msg_id, error=e)
+            return Err(e)
 
     except Exception as e:
-        error_msg = "Uknown error"
-        logger.error({
-            "event":"METHDO.EXECUTION.FAILED",
-            "msg":error_msg,
-            "raw_error":str(e)
-        })
-        await req_rep_socket.send_multipart([b"activex",b"method.exec.failed",CONSTANTS.ERROR_STATUS,b"{}",b""])
-        return Err(Exception(error_msg))
-
+        error_msg = f"Uknown error: {str(e)}"
+        e         = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR,msg=error_msg)
+        await U.send_error_axo(socket=socket,operation=envelope.operation,task_id= envelope.task_id,msg=envelope.msg_id, error=e)
+        return Err(e)
 
 
 
 
 async def method_exeution(
         endpoint_manager:DistributedEndpointManager,
+        summoner:Summoner,
         heater:Heater,
         serde:Serde,
         storage_service:MictlanXClient,
         store:KVStore,
         req_rep_socket:zmq.Socket,
-        task:Task
-):
+        task:Task,
+        envelope: AxoRequestEnvelope,
+        config:Config,
+)->Result[Any,AxoError]:
     heater.warm(task_id=task.task_id)
-    dependencies = task.get_dependencies()
-    logger.debug({
-        "event":"DEPENDENCIES.SHOW",
-        "dependencies":dependencies
-    })
-    install_packages(packages=dependencies)
-
-    endpoint_id = task.get_endpoint_id()
+    dependencies             = task.get_dependencies()
+    deps_installation_result = install_packages(packages=dependencies)
+    endpoint_id = envelope.axo_endpoint_id
     exists      = endpoint_manager.exists(endpoint_id=endpoint_id)
+    print(endpoint_id,exists, dependencies)
+    if not exists:
+        logger.warning({
+            "event":"DEPLOY.ENDPOINT", 
+            "endpoint_id":endpoint_id
+        })
+        res = U.__deploy_endpoint(summoner=summoner,config=config,dependencies=dependencies,endpoint_id=endpoint_id,image=config.image)
 
-    logger.debug({
-        "event":"ENDPOINT.MANAGER",
-        "endpoints":str(endpoint_manager.endpoints),
-        "endpoint_id":AXO_ENDPOINT_ID,
-        "current_endpoint_id":endpoint_id,
-        "size":len(endpoint_manager.endpoints),
-        "exists":exists
-    })
+    # logger.debug({
+    #     "event":"ENDPOINT.MANAGER",
+    #     "endpoints":str(endpoint_manager.endpoints),
+    #     "endpoint_id":AXO_ENDPOINT_ID,
+    #     "current_endpoint_id":endpoint_id,
+    #     "size":len(endpoint_manager.endpoints),
+    #     "exists":exists
+    # })
+
     result = await __method_execution(
         serde           = serde,
         storage_service = storage_service,
         store           = store,
-        req_rep_socket  = req_rep_socket,
+        socket  = req_rep_socket,
         task            = task,
+        envelope=envelope
     )
     return result
