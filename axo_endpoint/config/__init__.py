@@ -1,19 +1,28 @@
 import os
-from mictlanx.utils.index import Utils as MictlanXUtils
+# from mictlanx.utils.index import Utils as MictlanXUtils
+from typing import List
 
 class Config:
     def __init__(self):
         self.AXO_ENDPOINT_ID = os.environ.get("AXO_ENDPOINT_ID", "axo-endpoint-0")
+        self.AXO_GOSSIP_BIND_HOST =  os.environ.get("AXO_GOSSIP_BIND_HOST","0.0.0.0")           # where *this* node binds PUB
+        self.AXO_GOSSIP_PORT: int =  int(os.environ.get("AXO_GOSSIP_PORT","7777"))                      # PUB/SUB port for gossip
+        self.AXO_HEARTBEAT_INTERVAL: float =  float(os.environ.get("AXO_HEARTBEAT_INTERVAL","5.0"))              # seconds
+
+        self.AXO_GOSSIP_SEEDS: List[str] =  os.environ.get("AXO_GOSSIP_SEEDS","").split(" ")                 # e.g. ["tcp://seed1:7777","tcp://seed2:7777"]
+        self.AXO_HEARTBEAT_TTL: int =  int(os.environ.get("AXO_HEARTBEAT_TTL","30"))                   # seconds; mark peer stale if > TTL
+
+
         self.AXO_LOGGER_PATH = os.environ.get("AXO_LOGGER_PATH", "/log")
         self.AXO_LOGGER_WHEN = os.environ.get("AXO_LOGGER_WHEN", "h")
         self.AXO_SYNC_MAX_IDLE_TIME = os.environ.get("AXO_SYNC_MAX_IDLE_TIME","24h")
         self.AXO_HEATER_TICK_TIME = os.environ.get("AXO_HEATER_TICK_TIME","30s")
         self.AXO_LOGGER_INTERVAL = int(os.environ.get("AXO_LOGGER_INTERVAL", "24"))
         self.AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG", "1")))
-        self.AXO_SINK_PATH = os.environ.get("AXO_SINK_PATH", "/sink")
-        self.AXO_SOURCE_PATH = os.environ.get("AXO_SOURCE_PATH", "/source")
+        self.AXO_SINK_PATH = os.environ.get("AXO_SINK_PATH", "/axo")
+        self.AXO_SOURCE_PATH = os.environ.get("AXO_SOURCE_PATH", "/axo/source")
         self.AXO_DATA_PATH = os.environ.get("AXO_DATA_PATH", "/data")
-        self.AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE", "nachocode/axo:endpoint-0.0.1a4")
+        self.AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE", "nachocode/axo:endpoint-0.0.2")
         self.AXO_ENDPOINT_DEPENDENCIES_STR = os.environ.get("AXO_ENDPOINT_DEPENDENCIES", "")
         self.AXO_ENDPOINT_DEPENDENCIES = list(filter(lambda x: len(x) > 0, self.AXO_ENDPOINT_DEPENDENCIES_STR.split(";")))
         self.AXO_PROTOCOL = os.environ.get("AXO_PROTOCOL", "tcp")
@@ -24,6 +33,7 @@ class Config:
         self.AXO_ENDPOINTS_STR = os.environ.get("AXO_ENDPOINTS", "").split(" ")
         self.AXO_ENDPOINTS = list(filter(lambda x: len(x) > 0, self.AXO_ENDPOINTS_STR))
         self.AXO_HEATER_MAX_IDLE_TIME = os.environ.get("AXO_HEATER_MAX_IDLE_TIME", "1h")
+        self.AXO_METRICS_COLLECTOR_DEFAULT_LIMIT = int(os.environ.get("AXO_METRICS_COLLECTOR_DEFAULT_LIMIT","-1"))
         
         self.MICTLANX_SUMMONER_IP_ADDR = os.environ.get("MICTLANX_SUMMONER_IP_ADDR", "localhost")
         self.MICTLANX_SUMMONER_API_VERSION = os.environ.get("MICTLANX_SUMMONER_API_VERSION", "3")

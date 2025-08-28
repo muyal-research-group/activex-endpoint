@@ -192,8 +192,8 @@ async def put_metadata(
                 "service_time":T.time()-_start_time
             })
 
-        key = metadata.axo_key
-        endpoint_id: str = _extract_endpoint_id(task)
+        key         = metadata.axo_key
+        endpoint_id = _extract_endpoint_id(task)
 
         # Ensure endpoint exists (auto-deploy if needed)
         endpoint_result_maybe = await _ensure_endpoint(endpoint_manager, summoner, endpoint_id,config)
@@ -230,8 +230,6 @@ async def put_metadata(
                     "key": key,
                     "response_time": T.time() - _start_time
                 })
-                # await socket.send_multipart([b"activex", b"PUT.METADATA.SUCCESSED",
-                                                    #  CONSTANTS.SUCCESS_STATUS, b"{}", key.encode()])
                 return Ok(key)
             else:
                 e = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR, msg =str(put_res.unwrap_err()) )

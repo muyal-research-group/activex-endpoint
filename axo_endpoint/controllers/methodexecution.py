@@ -50,7 +50,9 @@ def __axo_method(f):
                 "args":",".join(map(str,args)),
                 **kwargs
             })
-            return Ok(f(*args,**kwargs))
+            result = f(*args,**kwargs)
+            print("_______RESULT",result)
+            return Ok(result)
         except Exception as e:
             logger.error({"event":"FAILED.__AXO_METHOD","detail":str(e)})
             return Err(e)
@@ -189,7 +191,6 @@ async def __method_execution(
         _key = MetadataKey(id = envelope.axo_key,version=envelope.axo_version,alias=envelope.axo_alias)
 
         maybe_metadata = store.get(key=_key)
-        print("MAYBE_METADATRA", maybe_metadata)
         if maybe_metadata.is_none:
             logger.warning({
                 "event":"LOCAL.NOT.FOUND",
@@ -201,7 +202,6 @@ async def __method_execution(
                 bucket_id     = axo_bucket_id,
                 ball_id       = f"{axo_key}_source_code",
             )
-            print(get_metadata_result)
             # Check if get_metadata got an error_____________________________________________
             if get_metadata_result.is_err:
                 error_msg = f"Metadata not found: {axo_key}"
@@ -233,23 +233,23 @@ async def __method_execution(
 
         if obj_result_get_response.is_err:
             e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get source code failed")
-            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
             return Err(e)
 
         
         if attrs_result_get_response.is_err:
             e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get attributes failed")
-            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
             return Err(e)
 
         # _______________________________________________________________________________________
         get_obj_response           = obj_result_get_response.unwrap()
-        source_code                = CP.loads(get_obj_response.data.tobytes())
+        source_code                = get_obj_response.data.tobytes().decode("utf-8")
         attrs_response             = attrs_result_get_response.unwrap()
         attrs                      = CP.loads(attrs_response.data.tobytes())
         mod                        = types.ModuleType("__axo_dynamic__")
         mod.__dict__["Axo"]        = Axo
-        mod.__dict__["axo_method"] = __axo_method
+        # This is provisional
+        mod.__dict__["axo_method"] = lambda x:x
+        # mod.__dict__["axo_method"] = __axo_method
         class_name                 = get_obj_response.metadatas[0].tags.get("axo_class_name")
         exec(source_code, mod.__dict__)
         X = getattr(mod,class_name)
@@ -261,7 +261,6 @@ async def __method_execution(
         if bucket_result.is_err:
             error_msg = f"Get bucket failed: {source_bucket_id}"
             e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
-            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
             return Err(e)
      
         bucket = bucket_result.unwrap()
@@ -300,18 +299,17 @@ async def __method_execution(
             # **(dict(list(map(lambda x: (x[0],str(x[1])),task.fkwargs.items()))))
         })
         f_result:Result[Any, Exception]       = f(*task.fargs,**task.fkwargs)
-        # print("F_RESULT",f_result)
+
         if f_result.is_err:
             msg = f"Failed to execute: {f.__name__}"
             e   = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR, msg=msg)
-            await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
             return Err(e)
         
         #  THIS IS THE PART THAT WE NEED TO CHANGE THE VERSION. 
         result       = f_result.unwrap()
+
         result_bytes = CP.dumps(result)
         result_key   = _generate_id(val=None,size=12)
-
         f_result_put_result = await storage_service.put(
             bucket_id = sink_bucket_id,
             key       = result_key,
@@ -331,13 +329,11 @@ async def __method_execution(
         else:
             error_msg = f"Failed to store the {task.metadata.get('fname','fx')} result"
             e = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR,msg=error_msg)
-            await U.send_error_axo(socket=socket,operation=envelope.operation,task_id=envelope.task_id,msg_id=envelope.msg_id, error=e)
             return Err(e)
 
     except Exception as e:
         error_msg = f"Uknown error: {str(e)}"
         e         = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR,msg=error_msg)
-        await U.send_error_axo(socket=socket,operation=envelope.operation,task_id= envelope.task_id,msg=envelope.msg_id, error=e)
         return Err(e)
 
 
@@ -360,22 +356,12 @@ async def method_exeution(
     deps_installation_result = install_packages(packages=dependencies)
     endpoint_id = envelope.axo_endpoint_id
     exists      = endpoint_manager.exists(endpoint_id=endpoint_id)
-    print(endpoint_id,exists, dependencies)
     if not exists:
         logger.warning({
             "event":"DEPLOY.ENDPOINT", 
             "endpoint_id":endpoint_id
         })
         res = U.__deploy_endpoint(summoner=summoner,config=config,dependencies=dependencies,endpoint_id=endpoint_id,image=config.image)
-
-    # logger.debug({
-    #     "event":"ENDPOINT.MANAGER",
-    #     "endpoints":str(endpoint_manager.endpoints),
-    #     "endpoint_id":AXO_ENDPOINT_ID,
-    #     "current_endpoint_id":endpoint_id,
-    #     "size":len(endpoint_manager.endpoints),
-    #     "exists":exists
-    # })
 
     result = await __method_execution(
         serde           = serde,

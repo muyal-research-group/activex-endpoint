@@ -8,15 +8,14 @@ from option import Result,Ok,Err,Some,NONE
 from typing import Any,Dict,List
 from nanoid import generate as nanoid 
 
-from axo import Axo
 import axo_endpoint.utils as U
 from axo_endpoint.interfaces import Heater,Task
-from axo_endpoint.utils import install_packages,deploy_endpoint
-from axo.endpoint.manager import DistributedEndpointManager
 from axo_endpoint.store import KVStore
-from axo_endpoint.controllers import put_metadata
 from axo_endpoint.serde import Serde
 import axo_endpoint.constants as CONSTANTS
+from axo.log import get_logger
+from axo.errors import AxoError,AxoErrorType
+from axo.models import AxoRequestEnvelope
 # 
 from mictlanx.v4.client import Client as MictlanXClient
 from mictlanx.logger.log import Log
@@ -48,17 +47,29 @@ async def elasticity(
         serde:Serde,
         storage_service:MictlanXClient,
         store:KVStore,
-        req_rep_socket:zmq.Socket,
+        socket:zmq.Socket,
         task:Task,
+        envelope:AxoRequestEnvelope,
         endpoint_manager:EndpointManager
         # summoner:Summoner 
-):
+)->Result[bool, AxoError]:
     try:
         rf = int(task.metadata.get("rf",1))
-        endpoints = list(map(lambda e: asdict(e),endpoint_manager.deploy_endpoint_bulk(rf=rf)))
-        await req_rep_socket.send_multipart([b"activex",b"success",CONSTANTS.SUCCESS_STATUS,b"{}",CP.dumps(endpoints)])
+        created_endpoints_result = endpoint_manager.deploy_endpoint_bulk(rf=rf)
+        
+        if created_endpoints_result.is_err:
+            _e = created_endpoints_result.unwrap_err()
+            e = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR,msg = str(_e))
+            _ = await U.send_error_axo(socket=socket,operation=envelope.operation,task_id=envelope.task_id,msg_id=envelope.msg_id,error=e)
+            return Err(e)
+        
+        created_endpoints = created_endpoints_result.unwrap()
+
+        endpoints = list(map(lambda e: asdict(e), created_endpoints))
+        _ = await U.send_ok(socket=socket,operation=envelope.operation,task_id=envelope.task_id,msg_id=envelope.msg_id)
         return Ok(True)
     except Exception as e:
-        await req_rep_socket.send_multipart([b"activex",b"error",CONSTANTS.ERROR_STATUS,b"{}",str(e).encode() ])
-        return Err(e)
+        _e = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR,msg = str(e))
+        _ = await U.send_error_axo(socket=socket,operation=envelope.operation,task_id=envelope.task_id,msg_id=envelope.msg_id,error=_e)
+        return Err(_e)
         

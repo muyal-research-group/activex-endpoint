@@ -45,28 +45,33 @@ async def send_axo_reply(
     msg_id:str = None,
     envelope_overrides: Optional[dict] = None,
     payload_frames: Optional[List[bytes]] = None
-):
+)->Result[bool,AxoError]:
     """Send a protocol-correct Axo reply with optional payload frames."""
-    env = AxoReplyEnvelope(
-        msg_id=msg_id,
-        operation=operation,
-        status=status,
-        status_code= status_code,
-        task_id=task_id,
-        **(envelope_overrides or {}),
-    )
-    frames = [
-        MAGIC,
-        PROTO,
-        operation.encode("utf-8"),
-        JSON_CT,
-        env.model_dump_json().encode("utf-8"),
-    ]
-    if payload_frames:
-        frames.extend(payload_frames)
-    # if 
-    logger.debug(msg={**env.__dict__})
-    await socket.send_multipart(frames)
+    try: 
+        env = AxoReplyEnvelope(
+            msg_id=msg_id,
+            operation=operation,
+            status=status,
+            status_code= status_code,
+            task_id=task_id,
+            **(envelope_overrides or {}),
+        )
+        frames = [
+            MAGIC,
+            PROTO,
+            operation.encode("utf-8"),
+            JSON_CT,
+            env.model_dump_json().encode("utf-8"),
+        ]
+        if payload_frames:
+            frames.extend(payload_frames)
+        # if 
+        logger.debug(msg={**env.__dict__})
+        await socket.send_multipart(frames)
+        return Ok(True)
+    except Exception as e:
+        _e = AxoError.make(error_type=AxoErrorType.TRANSPORT_ERROR,msg=str(e))
+        return Err(_e)
 
 
 # --------------------------------------------------------------------
@@ -109,7 +114,7 @@ async def send_error_axo(
     error: "AxoError",                  # modelo tipado
     envelope_overrides: Optional[Dict[str, Any]] = None,
     payload_frames: Optional[List[bytes]] = None,
-) -> None:
+) -> Result[bool, AxoError]:
     """
     Envia una respuesta de error usando un AxoError tipado.
     Equivalente moderno de 'send_error' pero con semántica fuerte.
@@ -118,7 +123,7 @@ async def send_error_axo(
     overrides = dict(envelope_overrides or {})
     overrides["error"] = error.model_dump()
 
-    await send_axo_reply(
+    return await send_axo_reply(
         socket=socket,
         operation=operation,
         status="ERROR",
@@ -146,7 +151,7 @@ async def send_error(
     retry_after_ms: Optional[int] = None,
     envelope_overrides: Optional[Dict[str, Any]] = None,
     payload_frames: Optional[List[bytes]] = None,
-) -> None:
+):
     """
     Azúcar sintáctico: construye un AxoError 'al vuelo' a partir de un mensaje.
     Útil en puntos de falla genéricos (parsing, excepciones inesperadas, etc).
@@ -164,7 +169,7 @@ async def send_error(
     #    **ax_err.__dict__
     # })
 
-    await send_error_axo(
+    return await send_error_axo(
         socket=socket,
         operation=operation,
         task_id=task_id,

@@ -3,6 +3,7 @@ import sys
 import time as T
 import asyncio
 import zmq.asyncio 
+from typing import Dict,Any
 import humanfriendly as HF
 from dotenv import load_dotenv
 from option import Some,Result,Ok,Err
@@ -13,7 +14,6 @@ from axo.endpoint.endpoint import DistributedEndpoint
 from axo.contextmanager import AxoContextManager
 from axo.runtime.local import LocalRuntime
 from axo.storage.data import MictlanXStorageService
-from axo.core.models import MetadataX
 from axo.models import AxoRequestEnvelope
 from axo.enums import AxoOperationType
 from axo.errors import AxoErrorType,AxoError
@@ -33,16 +33,21 @@ from axo_endpoint.interfaces import Heater
 from axo_endpoint.serde import DefaultSerde
 from axo_endpoint.config import Config
 from axo_endpoint.interfaces import Task
+import axo_endpoint.decentralized as Dx
+from axo_endpoint.metrics import MetricCollector
 
 ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH",-1)
+print("ENV",ENV_FILE_PATH)
 if not ENV_FILE_PATH == -1:
     load_dotenv(ENV_FILE_PATH)
 
 
 
-config = Config()
 
-serde = DefaultSerde()
+
+config            = Config()
+serde             = DefaultSerde()
+metrics_collector = MetricCollector(default_limit=config.AXO_METRICS_COLLECTOR_DEFAULT_LIMIT)
 
 logger = Log(
     console_handler_filter = lambda x: config.AXO_DEBUG,
@@ -97,8 +102,9 @@ summoner = Summoner(
     protocol    = config.MICTLANX_SUMMONER_PROTOCOL
 )
 endpoint_manager_x = EndpointManager(
-    summoner = summoner,
-    image=config.AXO_ENDPOINT_IMAGE
+    axo_endpoint_id = config.AXO_ENDPOINT_ID,
+    summoner        = summoner,
+    image           = config.AXO_ENDPOINT_IMAGE
 )
 
 endpoint_manager_x.add_endpoint(
@@ -160,7 +166,6 @@ async def put_metadata_op(
     *,
     socket: zmq.asyncio.Socket,
     task: Task,
-    # metadata:MetadataX,
     envelope: AxoRequestEnvelope,
     store: SimpleStore,
     endpoint_manager: DistributedEndpointManager,
@@ -183,8 +188,6 @@ async def put_metadata_op(
             config           = config,
             metadata         = metadata
         )
-        print("PUT_RES",res)
-
         if res.is_err:
             err = res.unwrap_err()
             await U.send_error_axo(
@@ -266,34 +269,12 @@ async def method_exec_op(
             envelope         = envelope,
             config           = config,
         )
-        print("EXC+RES",exec_res)
 
         if exec_res.is_err:
-            # err_msg = str(exec_res.unwrap_err())
-            await U.send_error_axo(
-                socket    = socket,
-                operation = AxoOperationType.METHOD_EXEC,
-                task_id   = task.task_id,
-                error=exec_res.unwrap_err(),
-                # message=err_msg,
-           
-                # payload_frames=[],
-            )
+            e = exec_res.unwrap_err()
+            _ = await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
             return Err(exec_res.unwrap_err())
-            # return Err(Exception(err_msg))
 
-
-        # await U.send_ok(
-        #     socket=socket,
-        #     operation=envelope.operation,
-        #     task_id=envelope.task_id,
-        #     msg_id=envelope.msg_id,
-        #     envelope_overrides={
-        #         "axo_uri": envelope.axo_uri,
-        #         "method": envelope.method,
-        #         "axo_version": envelope.axo_version,
-        #     }
-        # )
 
         logger.info({
             "event": "METHOD.EXEC.REPLY",
@@ -301,7 +282,6 @@ async def method_exec_op(
             "object_id": envelope.axo_uri,
             "method": envelope.method,
             "axo_version": envelope.axo_version,
-            # "post_version": post_version,
             "response_time": T.time() - t0,
         })
         return Ok(None)
@@ -333,7 +313,7 @@ async def create_endpoint(
         # Call your elasticity controller (must not send on its own)
         res = await elasticity(
             store=store,
-            req_rep_socket=socket,        # keep for signature; avoid sending inside
+            socket=socket,        # keep for signature; avoid sending inside
             serde=serde,
             storage_service=storage_service,
             endpoint_manager=endpoint_manager_x,
@@ -343,23 +323,17 @@ async def create_endpoint(
 
         if res.is_err:
             err_msg = str(res.unwrap_err())
-            await U.send_error(
-                socket     = socket,
-                operation  = AxoOperationType.CREATE_ENDPOINT,
-                task_id    = task.task_id,
-                error_type = AxoErrorType.INTERNAL_ERROR,
-                message    = err_msg
-            )
+            # e = AxoError
             return Err(Exception(err_msg))
 
-        await U.send_ok(
-            socket             = socket,
-            operation          = AxoOperationType.CREATE_ENDPOINT,
-            task_id            = task.task_id,
-            envelope_overrides = {
-                "axo_uri": envelope.axo_uri,
-            },
-        )
+        # await U.send_ok(
+        #     socket             = socket,
+        #     operation          = AxoOperationType.CREATE_ENDPOINT,
+        #     task_id            = task.task_id,
+        #     envelope_overrides = {
+        #         "axo_uri": envelope.axo_uri,
+        #     },
+        # )
 
         logger.info({
             "event": "ELASTICITY.REPLY",
@@ -378,6 +352,9 @@ async def create_endpoint(
             message    = str(e)
         )
         return Err(e)
+
+
+
 
 
 
@@ -536,9 +513,16 @@ async def run_heater():
 
 async def main():
     global config
+    ctx = context  # you already created: zmq.asyncio.Context()
 
-    task1 = asyncio.create_task(main_req_rep(config=config))
-    await asyncio.gather(task1)
+    task_reqrep = asyncio.create_task(main_req_rep(config=config))
+    task_hb_pub = asyncio.create_task(Dx.heartbeat_publisher_task(ctx, config,metrics_collector))
+    task_hb_sub = asyncio.create_task(Dx.heartbeat_subscriber_task(ctx,endpoint_manager, config))
+    task_gc     = asyncio.create_task(Dx.neighbors_gc_task(config,endpoint_manager))
+    task_heater = asyncio.create_task(run_heater())
+    await asyncio.gather(task_reqrep, task_hb_pub, task_hb_sub, task_gc, task_heater)
+
+    # await asyncio.gather(task1)
 
 if __name__ == "__main__":
 
