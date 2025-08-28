@@ -13,7 +13,7 @@ from axo.endpoint.manager import DistributedEndpointManager
 from axo.endpoint.endpoint import DistributedEndpoint
 from axo.contextmanager import AxoContextManager
 from axo.runtime.local import LocalRuntime
-from axo.storage.data import MictlanXStorageService
+from axo.storage.services import MictlanXStorageService
 from axo.models import AxoRequestEnvelope
 from axo.enums import AxoOperationType
 from axo.errors import AxoErrorType,AxoError
