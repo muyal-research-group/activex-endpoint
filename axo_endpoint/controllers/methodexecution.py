@@ -16,6 +16,7 @@ from axo.models import AxoRequestEnvelope,MetadataX
 from axo.log import get_logger
 from axo.helpers import _generate_id
 from axo.enums import AxoOperationType
+from axo.storage.services import MictlanXStorageService
 # 
 from axo_endpoint.config import Config
 import axo_endpoint.utils as U
@@ -31,7 +32,8 @@ from mictlanx.v4.asyncx import AsyncClient as MictlanXClient
 from mictlanx.v4.summoner.summoner import Summoner
 import mictlanx.v4.interfaces as InterfaceX
 import mictlanx.v4.models as ModelX
-
+from functools import wraps
+import asyncio
 AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
 AXO_ENDPOINT_ID    = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-0")
 AXO_LOGGER_PATH    = os.environ.get("AXO_LOGGER_PATH","/log")
@@ -42,20 +44,29 @@ AXO_SINK_PATH      = os.environ.get("AXO_SINK_PATH","/sink")
 logger = get_logger(name=__name__,path=AXO_LOGGER_PATH,ltype="JSON")
 
 def __axo_method(f):
-    def __inner(*args,**kwargs):
+    is_async = inspect.iscoroutinefunction(f)
+
+    @wraps(f)
+    async def __inner(*args, **kwargs):
         try:
             logger.debug({
-                "event":"__AXO_METHOD",
-                "fname":f.__name__,
-                "args":",".join(map(str,args)),
-                **kwargs
+                "event": "__AXO_METHOD",
+                "fname": f.__name__,
+                "args": ", ".join(map(repr, args)),
+                **{k: repr(v) for k, v in kwargs.items()}
             })
-            result = f(*args,**kwargs)
-            print("_______RESULT",result)
+            if is_async:
+                result = await f(*args, **kwargs)
+            else:
+                # run sync function off the event loop
+                result = await asyncio.to_thread(f, *args, **kwargs)
+
+            print("_______RESULT", result)
             return Ok(result)
         except Exception as e:
-            logger.error({"event":"FAILED.__AXO_METHOD","detail":str(e)})
+            logger.error({"event": "FAILED.__AXO_METHOD", "detail": str(e)})
             return Err(e)
+
     return __inner
 
 
@@ -165,7 +176,7 @@ async def __call(
 
 async def __method_execution(
         serde:Serde,
-        storage_service:MictlanXClient,
+        storage_client:MictlanXClient,
         store:KVStore,
         socket:zmq.Socket,
         task:Task,
@@ -178,6 +189,7 @@ async def __method_execution(
     sink_bucket_id   = task.get_sink_bucket_id()
     axo_sink_path_source_bucket_id_path = "{}/{}".format(AXO_SINK_PATH,source_bucket_id)
     axo_sink_path_sink_bucket_id_path   = "{}/{}".format(AXO_SINK_PATH,sink_bucket_id)
+    storage_service = MictlanXStorageService(client= storage_client)
     os.makedirs(axo_sink_path_sink_bucket_id_path,exist_ok=True)
     logger.debug({
         "axo_key":axo_key,
@@ -198,7 +210,7 @@ async def __method_execution(
                 "key":axo_key,
             })
             get_metadata_start_time = T.time()
-            get_metadata_result:Result[ModelX.Ball,Exception] = await storage_service.get_metadata(
+            get_metadata_result:Result[ModelX.Ball,Exception] = await storage_client.get_metadata(
                 bucket_id     = axo_bucket_id,
                 ball_id       = f"{axo_key}_source_code",
             )
@@ -225,8 +237,8 @@ async def __method_execution(
         
         local_metadata            = maybe_metadata.unwrap()
         mictlanx_get_start_time   = T.time()
-        attrs_result_get_response = await storage_service.get(bucket_id=axo_bucket_id, key=f"{axo_key}_attrs")
-        obj_result_get_response   = await storage_service.get(
+        attrs_result_get_response = await storage_client.get(bucket_id=axo_bucket_id, key=f"{axo_key}_attrs")
+        obj_result_get_response   = await storage_client.get(
             bucket_id=axo_bucket_id,
             key=f"{axo_key}_source_code"
         )
@@ -257,7 +269,7 @@ async def __method_execution(
         # GET SOURCE BUCKET
         t1_get_source_bucket = T.time()
         # _______________________________________________________________________________________
-        bucket_result = await storage_service.get_bucket_metadata(bucket_id=source_bucket_id)
+        bucket_result = await storage_client.get_bucket_metadata(bucket_id=source_bucket_id)
         if bucket_result.is_err:
             error_msg = f"Get bucket failed: {source_bucket_id}"
             e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
@@ -298,7 +310,7 @@ async def __method_execution(
             "attrs":U.dict_any_to_dict_str(attrs)
             # **(dict(list(map(lambda x: (x[0],str(x[1])),task.fkwargs.items()))))
         })
-        f_result:Result[Any, Exception]       = f(*task.fargs,**task.fkwargs)
+        f_result:Result[Any, Exception]       = await f(*task.fargs,**{**task.fkwargs,"storage":storage_service})
 
         if f_result.is_err:
             msg = f"Failed to execute: {f.__name__}"
@@ -310,7 +322,7 @@ async def __method_execution(
 
         result_bytes = CP.dumps(result)
         result_key   = _generate_id(val=None,size=12)
-        f_result_put_result = await storage_service.put(
+        f_result_put_result = await storage_client.put(
             bucket_id = sink_bucket_id,
             key       = result_key,
             value     = result_bytes,
@@ -352,8 +364,13 @@ async def method_exeution(
         config:Config,
 )->Result[Any,AxoError]:
     heater.warm(task_id=task.task_id)
-    dependencies             = task.get_dependencies()
+    dependencies             = envelope.axo_dependencies
     deps_installation_result = install_packages(packages=dependencies)
+    if deps_installation_result.is_err:
+        logger.warning({
+            "event":"DEPENDENCIES.INSTALLATION.FAILED",
+            "erro":str(deps_installation_result.unwrap_err())
+        })
     endpoint_id = envelope.axo_endpoint_id
     exists      = endpoint_manager.exists(endpoint_id=endpoint_id)
     if not exists:
@@ -361,11 +378,18 @@ async def method_exeution(
             "event":"DEPLOY.ENDPOINT", 
             "endpoint_id":endpoint_id
         })
-        res = U.__deploy_endpoint(summoner=summoner,config=config,dependencies=dependencies,endpoint_id=endpoint_id,image=config.image)
+        ud_endpoint_image = getattr(envelope,"axo_endpoint_image")
+        res = U.__deploy_endpoint(
+            summoner     = summoner,
+            config       = config,
+            dependencies = dependencies,
+            endpoint_id  = endpoint_id,
+            image        =  ud_endpoint_image or config.AXO_ENDPOINT_IMAGE
+        )
 
     result = await __method_execution(
         serde           = serde,
-        storage_service = storage_service,
+        storage_client = storage_service,
         store           = store,
         socket  = req_rep_socket,
         task            = task,

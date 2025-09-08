@@ -139,7 +139,7 @@ class EndpointManager(object):
             # pubsub_port:int=16666,
             # req_res_port:int=16667,
             hostname:str="*",
-            image:str= "nachocode/axo:endpoint-0.0.2",
+            image:str= "nachocode/axo:endpoint-0.0.3a0",
             mode:str = "docker",
             network_id:str = "axo"
     )->Result[Tuple[Result[SummonContainerResponse,Exception],EndpointInfo ], Exception]:
@@ -150,9 +150,9 @@ class EndpointManager(object):
         req_res_port = self.default_req_res_port + current_index
         try:
             payload = SummonContainerPayload(
-                container_id=endpoint_id, 
-                image= image,
-                cpu_count=cpu_count,
+                container_id = endpoint_id,
+                image        = image,
+                cpu_count    = cpu_count,
                 envs={
                     "AXO_ENDPOINT_ID": endpoint_id,
                     "AXO_ENDPOINT_DEPENDENCIES": ";".join(dependencies),
@@ -223,8 +223,8 @@ class EndpointManager(object):
             )
             self.endpoints.append(endpoint_data)
             summoner_response = self.summoner.summon(
-                    payload= payload,
-                    mode=mode
+                    payload = payload,
+                    mode    = mode
             )
             return Ok((summoner_response,endpoint_data))
         

@@ -346,15 +346,11 @@ def deploy_endpoint(
         pubsub_port:int=16666,
         req_res_port:int=16667,
         hostname:str="*",
-        image:str= "nachocode/axo:endpoint-0.0.1a4"
+        image:str= "nachocode/axo:endpoint-0.0.3a0"
 ):
     start_time = T.time()
     try:
-        payload = SummonContainerPayload(
-            container_id=endpoint_id, 
-            image= image,
-            cpu_count=cpu_count,
-            envs={
+        envs = {
                 # AXO core
                 "AXO_ENDPOINT_ID": endpoint_id,
                 "AXO_ENDPOINT_DEPENDENCIES": ";".join(dependencies),
@@ -374,7 +370,7 @@ def deploy_endpoint(
                 "AXO_SUBSCRIBER_HOSTNAME": config.AXO_SUBSCRIBER_HOSTNAME,
                 "AXO_ENDPOINTS": " ".join(endpoints),
                 "AXO_HEATER_MAX_IDLE_TIME": config.AXO_HEATER_MAX_IDLE_TIME,
-                "AXO_DEBUG": config.AXO_DEBUG,  # default true
+                "AXO_DEBUG": int(config.AXO_DEBUG),  # default true
                 "AXO_METADATA_TIMEOUT": config.AXO_METADATA_TIMEOUT,
 
                 # MictlanX Summoner
@@ -389,7 +385,7 @@ def deploy_endpoint(
                 "MICTLANX_BUCKET_ID": config.MICTLANX_BUCKET_ID,
                 "MICTLANX_ROUTERS": config.MICTLANX_ROUTERS,
                 "MICTLANX_CLIENT_ID": endpoint_id,
-                "MICTLANX_DEBUG": config.MICTLANX_DEBUG,
+                "MICTLANX_DEBUG": int(config.MICTLANX_DEBUG),
                 "MICTLANX_LOG_INTERVAL": config.MICTLANX_LOG_INTERVAL,
                 "MICTLANX_LOG_WHEN": config.MICTLANX_LOG_WHEN,
                 "MICTLANX_LOG_OUTPUT_PATH": config.MICTLANX_LOG_OUTPUT_PATH,
@@ -398,34 +394,40 @@ def deploy_endpoint(
                 # Aliases
                 "NODE_IP_ADDR": endpoint_id,
                 "NODE_PORT": str(req_res_port),
-            },
-            exposed_ports=[
+        }
+        envs = dict(map(lambda x: (x[0],str(x[1]) ), envs.items()))
+        payload = SummonContainerPayload(
+            container_id  = endpoint_id,
+            image         = image,
+            cpu_count     = cpu_count,
+            envs          = envs,
+            exposed_ports = [
                 ExposedPort(host_port=pubsub_port,container_port=pubsub_port,ip_addr=NONE, protocolo=NONE),
                 ExposedPort(host_port=req_res_port,container_port=req_res_port,ip_addr=NONE, protocolo=NONE),
             ],
-            force=Some(True),
-            hostname=endpoint_id,
-            ip_addr=Some(endpoint_id),
-            labels={
-                "axo":"",
-                "axo.type":"endpoint"
+            force    = Some(True),
+            hostname = endpoint_id,
+            ip_addr  = Some(endpoint_id),
+            labels   = {
+                "axo"     : "",
+                "axo.type": "endpoint"
             },
-            memory=HF.parse_size(memory),
-            mounts=[
+            memory   = HF.parse_size(memory),
+            mounts   = [
                 MountX(
-                    source=endpoint_id,
-                    target="/log",
-                    mount_type=1,
+                    source     = f"{endpoint_id}-log",
+                    target     = "/log",
+                    mount_type = 1,
                 ),
                 MountX(
-                    source=endpoint_id,
-                    target="/data",
-                    mount_type=1,
+                    source     = f"{endpoint_id}-data",
+                    target     = "/data",
+                    mount_type = 1,
                 ),
             ],
-            network_id=config.AXO_NETWORK_ID,
-            selected_node=Some(selected_node),
-            shm_size=NONE,
+            network_id    = config.AXO_NETWORK_ID,
+            selected_node = Some(selected_node),
+            shm_size      = NONE,
         )
         logger.info({
             "envet":"DEPLOY.ENDPOINT",

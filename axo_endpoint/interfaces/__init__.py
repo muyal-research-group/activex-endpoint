@@ -60,7 +60,14 @@ class Task:
 
     # ------------------------------------------
     def get_dependencies(self) -> List[str]:
-        return self.__get_state().get("dependencies", [])
+        d1 = self.__get_state().get("dependencies", [])
+        d2 = self.__get_state().get("axo_dependencies", [])
+        def safe_list(value) -> List[str]:
+            if not isinstance(value, list):
+                return []
+            # Keep only strings
+            return [item for item in value if isinstance(item, str)]
+        return safe_list(d1) + safe_list(d2)
 
     def get_separator(self) -> str:
         return self.__get_state().get("separator", self.separator)

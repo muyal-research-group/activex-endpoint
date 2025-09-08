@@ -37,7 +37,6 @@ import axo_endpoint.decentralized as Dx
 from axo_endpoint.metrics import MetricCollector
 
 ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH",-1)
-print("ENV",ENV_FILE_PATH)
 if not ENV_FILE_PATH == -1:
     load_dotenv(ENV_FILE_PATH)
 

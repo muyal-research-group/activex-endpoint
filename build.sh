@@ -1,16 +1,16 @@
 #!/bin/bash
-readonly ACTIVEX_ENV=${2:-dev}
-readonly ACTIVEX_FULL_VERSION=${1:-20}
-
-echo "Removing Axo - ${ACTIVEX_FULL_VERSION}"
+readonly AXO_FULL_VERSION=${1:-20}
+readonly AXO_ENV=${2:-dev}
+readonly AXO_LIB_FULL_VERSION=${3:-$AXO_FULL_VERSION}
+echo "Removing Axo - ${AXO_FULL_VERSION}"
 poetry remove axo
-if [ "$ACTIVEX_ENV" == "dev" ]; then
-    cp ~/Programming/Python/activex/dist/axo-${ACTIVEX_FULL_VERSION}.tar.gz axo.tar.gz
-    docker build -f ./Dockerfile-dev -t nachocode/axo:endpoint-${ACTIVEX_FULL_VERSION} .
+if [ "$AXO_ENV" == "dev" ]; then
+    cp ~/Programming/Python/axo/dist/axo-${AXO_LIB_FULL_VERSION}.tar.gz axo.tar.gz
+    docker build -f ./Dockerfile-dev -t nachocode/axo:endpoint-${AXO_FULL_VERSION} .
     poetry remove axo
     poetry add ./axo.tar.gz
 else
-    poetry add axo==${ACTIVEX_FULL_VERSION}
-    docker build -f ./Dockerfile -t nachocode/axo:endpoint-${ACTIVEX_FULL_VERSION} .
+    poetry add axo==${AXO_LIB_FULL_VERSION}
+    docker build -f ./Dockerfile -t nachocode/axo:endpoint-${AXO_FULL_VERSION} .
 fi
 
