@@ -17,7 +17,7 @@ from axo.log import get_logger
 from axo.errors import AxoError,AxoErrorType
 from axo.models import AxoRequestEnvelope
 # 
-from mictlanx.v4.client import Client as MictlanXClient
+from mictlanx import AsyncClient as MictlanXClient
 from mictlanx.logger.log import Log
 from axo_endpoint.endpoints import EndpointManager
 from dataclasses import asdict
@@ -35,13 +35,13 @@ AXO_SOURCE_PATH               = os.environ.get("AXO_SOURCE_PATH","/source")
 AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG","1")))
 logger = Log(
     console_handler_filter=lambda x: AXO_DEBUG,
-    create_folder=True,
     error_log=True,
     name="activex.method_exeution",
     path=AXO_LOGGER_PATH,
     when=AXO_LOGGER_WHEN,
     interval=AXO_LOGGER_INTERVAL,
 )
+
 async def elasticity(
         heater:Heater,
         serde:Serde,

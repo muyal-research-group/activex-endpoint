@@ -42,10 +42,10 @@ class Config:
         self.MICTLANX_SUMMONER_PROTOCOL = os.environ.get("MICTLANX_SUMMONER_PROTOCOL", "http")
         self.MICTLANX_SUMMONER_MODE = os.environ.get("MICTLANX_SUMMONER_MODE", "docker")
         
-        self.MICTLANX_BUCKET_ID = os.environ.get("MICTLANX_BUCKET_ID", "activex")
-        self.MICTLANX_ROUTERS = os.environ.get("MICTLANX_ROUTERS", "mictlanx-router-0:localhost:60666")
+        self.MICTLANX_BUCKET_ID = os.environ.get("MICTLANX_BUCKET_ID", "axo")
+        self.MICTLANX_URI = os.environ.get("MICTLANX_URI", "mictlanx://mictlanx-router-0@localhost:60666?/api_version=4&protocol=http")
         
-        self.MICTLANX_CLIENT_ID = os.environ.get("MICTLANX_CLIENT_ID", "activex-mictlanx-0")
+        self.MICTLANX_CLIENT_ID = os.environ.get("MICTLANX_CLIENT_ID", "axo-mictlanx-0")
         self.MICTLANX_DEBUG = bool(int(os.environ.get("MICTLANX_DEBUG", "0")))
         self.MICTLANX_LOG_INTERVAL = int(os.environ.get("MICTLANX_LOG_INTERVAL", "24"))
         self.MICTLANX_LOG_WHEN = os.environ.get("MICTLANX_LOG_WHEN", "h")

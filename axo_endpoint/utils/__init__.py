@@ -15,8 +15,10 @@ from pydantic import ValidationError
 from nanoid import generate as nanoid
 import zmq.asyncio
 # 
-from mictlanx.v4.summoner.summoner import Summoner ,SummonContainerPayload,ExposedPort
-from mictlanx.interfaces.payloads import MountX
+from mictlanx.services.models.summoner import SummonContainerPayload,ExposedPort,MountX
+from mictlanx.services import Summoner
+from mictlanx import AsyncClient as MictlanXClient
+import mictlanx.interfaces as InterfaceX
 # 
 from axo_endpoint.interfaces import Task
 from axo_endpoint.config import Config
@@ -24,16 +26,202 @@ from axo_endpoint.config import Config
 from axo.models import AxoRequestEnvelope
 from axo.log import get_logger
 from axo.core.constants import *
-from axo.models import AxoReplyEnvelope
+from axo.models import AxoReplyEnvelope,MetadataX
+from axo.core.models import AxoContext,DeserializeT,AckT
 from axo.enums import AxoOperationType
 from axo.errors import AxoError, AxoErrorType
 from axo.endpoint.endpoint import DistributedEndpoint
+from axo_endpoint.store.models import MetadataKey
+from axo_endpoint.store import KVStore
+import zmq
+import types
+from axo import Axo
+import inspect
+from functools import wraps
+import asyncio
+import wrapt
+
 
 AXO_ENDPOINT_ID   = os.environ.get("AXO_ENDPOINT_ID","activex-endpoint-{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 )))
 AXO_SUMMONER_MODE = os.environ.get("AXO_SUMMONER_MODE","docker")
 AXO_LOGGER_PATH   = os.environ.get("AXO_LOGGER_PATH","/log")
 AXO_DEBUG         = bool(int(os.environ.get("AXO_DEBUG","1")))
 logger            = get_logger(name=__name__,ltype="JSON",path=AXO_LOGGER_PATH,debug=AXO_DEBUG)
+
+
+
+
+async def get_ao(
+        store: KVStore,
+        storage_client: MictlanXClient,
+        axo_bucket_id:str,
+        axo_key:str, 
+        axo_alias:str,
+        axo_version:int,
+)->Result[Axo,AxoError]:
+    try: 
+        _key           = MetadataKey(id = axo_key,version=axo_version,alias=axo_alias)
+        maybe_metadata = store.get(key=_key)
+        logger.debug({
+            "axo_key":axo_key,
+            "axo_version":axo_version,
+            "axo_alias":axo_alias,
+            "maybe_metadata":maybe_metadata.is_some
+        })
+
+        if maybe_metadata.is_none:
+            logger.warning({
+                "event":"LOCAL.NOT.FOUND",
+                "axo_bucket_id":axo_bucket_id,
+                "key":axo_key,
+            })
+            get_metadata_start_time = T.time()
+            get_metadata_result:Result[InterfaceX.Ball,Exception] = await storage_client.get_metadata(
+                bucket_id     = axo_bucket_id,
+                ball_id       = f"{axo_key}_source_code",
+            )
+            # Check if get_metadata got an error_____________________________________________
+            if get_metadata_result.is_err:
+                error_msg = f"Metadata not found: {axo_key}"
+                e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
+                return Err(e)
+            # _______________________________________________________________________________________
+
+            remote_metadata = get_metadata_result.unwrap()
+            logger.info({
+                "event":"GET.REMOTE.METADATA",
+                "bucket_id":axo_bucket_id,
+                "key":axo_key,
+                "response_time":T.time() - get_metadata_start_time
+            })
+            # remote_metadata.tags
+            # await put_metadata()
+            local_tags = remote_metadata.chunks[0].tags
+            store.put(key=_key, value=local_tags )
+            maybe_metadata = Some(MetadataX.model_validate(local_tags))
+
+
+
+        local_metadata            = maybe_metadata.unwrap()
+        mictlanx_get_start_time   = T.time()
+        attrs_result_get_response = await storage_client.get(bucket_id=axo_bucket_id, key=f"{axo_key}_attrs")
+        obj_result_get_response   = await storage_client.get(
+            bucket_id=axo_bucket_id,
+            key=f"{axo_key}_source_code"
+        )
+
+        if obj_result_get_response.is_err:
+            e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get source code failed")
+            return Err(e)
+
+
+        if attrs_result_get_response.is_err:
+            e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get attributes failed")
+            return Err(e)
+        get_obj_response           = obj_result_get_response.unwrap()
+        source_code                = get_obj_response.data.tobytes().decode("utf-8")
+        attrs_response             = attrs_result_get_response.unwrap()
+        attrs                      = CP.loads(attrs_response.data.tobytes())
+        mod                        = types.ModuleType("__axo_dynamic__")
+        mod.__dict__["Axo"]        = Axo
+        # This is provisional
+        def axo_task(
+            source_bucket: Optional[str] = "",
+            sink_bucket: Optional[str] = "",
+            filter_tags: Optional[Dict[str, str]] = None,
+            filter_prefix: Optional[str] = None,
+            deserialize: DeserializeT = "bytes",
+            ack: AckT = "delete",
+            lease_seconds: int = 60,
+        ):
+            # print("SORUCE",source_bucket)
+            ctx = AxoContext(
+                kind          = "task",
+                source_bucket = source_bucket,
+                sink_bucket   = sink_bucket,
+                filter_tags   = filter_tags,
+                filter_prefix = filter_prefix,
+                deserialize   = deserialize,
+                ack           = ack,
+                lease_seconds = lease_seconds,
+            )
+            def decorator(fn):
+                def __axo_task(_wrapped,ctx):
+                    @wrapt.decorator
+                    async def _wrapper(wrapped_func, instance,*args,**kwargs):
+                        is_async = inspect.iscoroutinefunction(wrapped_func)
+                        print("IS_ASYNC",is_async)
+                        return Ok(None)
+                        # logger.debug({
+                        #     "event": "__AXO.TASK",
+                        #     "fname": wrapped_func.__name__,
+                        #     "args": ", ".join(map(repr, args)),
+                        #     **{k: repr(v) for k, v in kwargs.items()}
+                        # })
+                        # if is_async:
+                        #     result = await wrapped_func(*args, **kwargs)
+                        # else:
+                        #     # run sync function off the event loop
+                        #     result = await asyncio.to_thread(wrapped_func, *args, **kwargs)
+
+                        # print("_______RESULT", result)
+                        # return Ok(result)
+                    return _wrapper(_wrapped)
+                return __axo_task(fn,ctx)
+
+
+            return decorator
+        # def axo_t(*args,**kwargs):
+            # print("X",args)
+            # return None
+        mod.__dict__["axo_task"] = axo_task
+        # mod.__dict__["axo_method"] = __axo_method
+        class_name                 = get_obj_response.metadatas[0].tags.get("axo_class_name")
+        exec(source_code, mod.__dict__)
+        X = getattr(mod,class_name)
+        obj = X(**attrs)
+        for attr_name, attr_value in attrs.items():
+            setattr(obj, attr_name, attr_value) 
+        return Ok(obj)
+    except Exception as e:
+        return Err(AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR, msg= str(e)))
+
+async def extract_task_envolope(socket:zmq.asyncio.Socket, )->Result[Tuple[Task,AxoRequestEnvelope,List[bytes]],AxoError]:
+    
+    try:
+        multipart = await socket.recv_multipart()
+        _start_time = T.time()
+        # Parse task
+        msg_result = from_multipart_to_task_and_envelope(multipart=multipart)
+        if msg_result.is_err:
+            e = msg_result.unwrap_err()
+            await send_error_axo(
+                socket    = socket,
+                operation = "UNKNOWN",
+                task_id   = "",
+                error     = e
+            )
+            return Err(e)
+
+        (task,envelope, frames) = msg_result.unwrap()
+        logger.debug({
+            "event": "TASK.RECEIVED",
+            "operation": task.operation,
+            "task_id": task.task_id,
+            **envelope.model_dump(),
+            "service_time":T.time()-_start_time
+        })
+        return Ok((task,envelope,frames))
+    except Exception as e:
+        await send_error(
+            socket     = socket,
+            operation  = AxoOperationType.UNKNOWN,
+            task_id    = None,
+            error_type = AxoErrorType.INTERNAL_ERROR,
+            message    = str(e)
+        )
+        return Err(e)
+
 
 async def send_axo_reply(
     socket: zmq.asyncio.Socket,
@@ -241,7 +429,6 @@ def from_multipart_to_task_and_envelope(
             try:
                 fargs = CP.loads(payload[0])
                 fkwargs = CP.loads(payload[1])
-                print("FARGS",fargs)
             except Exception as e:
                 return Err(AxoError.make(msg= f"Failed to deserialize METHOD.EXEC args/kwargs: {e}", error_type=AxoErrorType.BAD_REQUEST))
 
@@ -251,6 +438,32 @@ def from_multipart_to_task_and_envelope(
                 metadata=metadata,
                 fargs=fargs,
                 fkwargs=fkwargs,
+            )
+            envelope.task_id = task.task_id
+            return Ok((task, envelope, payload))
+
+        elif operation == AxoOperationType.TASK_EXEC:
+            if len(payload) != 3:
+                return Err(
+                    AxoError.make(
+                        msg        = f"METHOD.EXEC expected 3 payload frames (fargs, fkwargs,ctx), got {len(payload)}",
+                        error_type = AxoErrorType.BAD_REQUEST
+                    )
+                )
+            try:
+                fargs = CP.loads(payload[0])
+                fkwargs = CP.loads(payload[1])
+                ctx = CP.loads(payload[2])
+            except Exception as e:
+                return Err(AxoError.make(msg= f"Failed to deserialize TASK.EXEC args/kwargs: {e}", error_type=AxoErrorType.BAD_REQUEST))
+
+            task = Task(
+                namespace="axo",
+                operation=operation,
+                metadata=metadata,
+                fargs=fargs,
+                fkwargs=fkwargs,
+                ctx=ctx
             )
             envelope.task_id = task.task_id
             return Ok((task, envelope, payload))
@@ -383,7 +596,7 @@ def deploy_endpoint(
 
                 # MictlanX client / bucket / routers
                 "MICTLANX_BUCKET_ID": config.MICTLANX_BUCKET_ID,
-                "MICTLANX_ROUTERS": config.MICTLANX_ROUTERS,
+                "MICTLANX_ROUTERS": config.MICTLANX_URI,
                 "MICTLANX_CLIENT_ID": endpoint_id,
                 "MICTLANX_DEBUG": int(config.MICTLANX_DEBUG),
                 "MICTLANX_LOG_INTERVAL": config.MICTLANX_LOG_INTERVAL,

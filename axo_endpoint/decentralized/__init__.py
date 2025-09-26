@@ -12,22 +12,13 @@ from axo_endpoint.metrics import MetricCollector
 logger = get_logger(name=__name__,ltype="JSON")
 HB_TOPIC = b"AXO.HEARTBEAT"
 NEIGHBORS: Dict[str, Dict[str, Any]] = {}
+
 def _rpc_uri_from(config: Config) -> str:
     """Build the contact URI for this endpoint's request/response socket."""
     return f"{config.AXO_PROTOCOL}://{config.AXO_HOSTNAME}:{config.AXO_REQ_RES_PORT}"
 
 def _gossip_bind_uri(config: Config) -> str:
     return f"{config.AXO_PROTOCOL}://{config.AXO_GOSSIP_BIND_HOST}:{config.AXO_GOSSIP_PORT}"
-
-
-def _collect_metrics() -> Dict[str, Any]:
-    # Keep it cheap; you can enrich this over time
-    return {
-        "queue_len": 0,                # you can wire this to your internal queue(s)
-        "avg_rt_ms": 0.0,
-        # "cached_aos": list(store.keys()) if hasattr(store, "keys") else [],
-        "ts": T.time(),
-    }
 
 async def heartbeat_publisher_task(ctx: zmq.asyncio.Context, config: Config,metrics_collector:MetricCollector):
     """
@@ -38,25 +29,31 @@ async def heartbeat_publisher_task(ctx: zmq.asyncio.Context, config: Config,metr
     logger.debug({"event": "GOSSIP.PUB.BOUND", "uri": _gossip_bind_uri(config)})
     try:
         while True:
-            metrics_str = await metrics_collector.to_json()
-            rpc_uri = _rpc_uri_from(config)
-            # _collect_metrics()
-            await pub.send_multipart([
-                HB_TOPIC,
-                config.AXO_ENDPOINT_ID.encode(),
-                b"axo-endpoint",
-                rpc_uri.encode(),
-                metrics_str.encode(),
-            ])
-            logger.debug({
-                "event":"HEARBEAT.SENT",
-                "endpoint_id":config.AXO_ENDPOINT_ID,
-                "rpc_uri":rpc_uri
-            })
-            _ = await metrics_collector.add(f"{config.AXO_ENDPOINT_ID}.HEARTBEATS",1)
-            await asyncio.sleep(config.AXO_HEARTBEAT_INTERVAL)
+            try:
+                metrics_str = await metrics_collector.to_json()
+                rpc_uri     = _rpc_uri_from(config)
+                await pub.send_multipart([
+                    HB_TOPIC,
+                    config.AXO_ENDPOINT_ID.encode(),
+                    b"axo-endpoint",
+                    rpc_uri.encode(),
+                    metrics_str.encode(),
+                ])
+                logger.debug({
+                    "event":"HEARTBEAT.SENT",
+                    "endpoint_id":config.AXO_ENDPOINT_ID,
+                    "rpc_uri":rpc_uri
+                })
+                _ = await metrics_collector.add(f"{config.AXO_ENDPOINT_ID}.HEARTBEATS",1)
+                await asyncio.sleep(config.AXO_HEARTBEAT_INTERVAL)
+            except Exception as e:
+                logger.warning({"event": "HEARTBEAT.SEND.FAIL", "err": str(e)})
+                await asyncio.sleep(min(1.0, config.AXO_HEARTBEAT_INTERVAL))
     finally:
-        pub.close(0)
+        try: 
+            pub.close(0)
+        except Exception as e:
+            logger.warning({"event":"PUB.CLOSE.FAILED","error":str(e)})
 
 async def heartbeat_subscriber_task(ctx: zmq.asyncio.Context,endpoint_manager:EndpointManager, config: Config):
     """
@@ -71,7 +68,7 @@ async def heartbeat_subscriber_task(ctx: zmq.asyncio.Context,endpoint_manager:En
             sub.connect(seed)
             connected += 1
             logger.debug({
-                "event":"CONNECT.SUCCESSFULLY",
+                "event":"GOSSIP.CONNECT.SUCCESSFULLY",
                 "seed":seed,
                 "connected":connected
             })

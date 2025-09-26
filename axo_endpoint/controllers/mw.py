@@ -19,10 +19,11 @@ from axo_endpoint.serde import Serde
 from axo_endpoint.config import Config
 import axo_endpoint.constants as CONSTANTS
 # 
-from mictlanx.v4.client import Client as MictlanXClient
-from mictlanx.v4.interfaces import GetMetadataResponse,GetBytesResponse,Metadata
-from mictlanx.logger.log import Log
-# from axo.storage.data import StorageService
+from mictlanx import AsyncClient as MictlanXClient
+import mictlanx.interfaces as InterfaceX
+from axo.log import Log
+
+
 ALPHABET = string.ascii_lowercase+string.digits
 
 AXO_ENDPOINT_IMAGE  = os.environ.get("AXO_ENDPOINT_IMAGE","nachocode/activex:endpoint")
@@ -35,7 +36,6 @@ AXO_SOURCE_PATH               = os.environ.get("AXO_SOURCE_PATH","/source")
 AXO_DEBUG = bool(int(os.environ.get("AXO_DEBUG","1")))
 logger = Log(
     console_handler_filter=lambda x: AXO_DEBUG,
-    create_folder=True,
     error_log=True,
     name="activex.method_exeution",
     path=AXO_LOGGER_PATH,
@@ -59,7 +59,7 @@ async def manager_worker(
     try:
         print("MANAGER WORKER EXECUTED")
         print(task.metadata)
-        get_metadata_result:Result[GetMetadataResponse, Exception]= storage_service.get_metadata(
+        get_metadata_result:Result[InterfaceX.GetMetadataResponse, Exception]= storage_service.get_metadata(
             key       = axo_key,
             bucket_id = axo_bucket_id
         )
@@ -75,7 +75,7 @@ async def manager_worker(
             return Err(Exception(error_msg))
         metadata = get_metadata_result.unwrap().metadata
         print("METADATRa",metadata)
-        obj_result_get_response :Result[GetBytesResponse,Exception]= storage_service.get_with_retry(
+        obj_result_get_response :Result[InterfaceX.GetBytesResponse,Exception]= storage_service.get_with_retry(
                 bucket_id=axo_bucket_id,
                 key=axo_key
         )

@@ -18,7 +18,7 @@ import axo_endpoint.constants  as CONSTANTS
 from axo_endpoint.store import KVStore
 from axo.core.models import MetadataX
 
-from mictlanx.v4.summoner.summoner import Summoner
+from mictlanx.services import Summoner
 from axo.log import get_logger
 from axo_endpoint.store.models import MetadataKey
 from axo.errors import AxoError

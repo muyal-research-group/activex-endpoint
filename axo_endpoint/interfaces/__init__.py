@@ -1,11 +1,15 @@
 from typing import Dict,Callable, Any,List,Optional
-import string
 from nanoid import generate as nanoid 
 import humanfriendly as HF
 import time as T
 import asyncio
-AnyFunctionType = Callable[..., any]
 from axo.helpers import _generate_id
+from axo.models import AxoContext
+
+
+
+AnyFunctionType = Callable[..., any]
+
 class Heater:
     def __init__(self,max_idle_time:str = "1h"):
         self.start_time = T.time()
@@ -29,7 +33,8 @@ class Task:
         operation: str,
         metadata: Dict[str, Any],
         fargs: Optional[List[Any]] = None,
-        fkwargs: Optional[Dict[str, Any]] = None
+        fkwargs: Optional[Dict[str, Any]] = None,
+        ctx:Optional[AxoContext] = None,
     ):
         self.task_id = nanoid()
         self.namespace = namespace
@@ -37,6 +42,7 @@ class Task:
         self.metadata = metadata or {}
         self.fargs = fargs or []
         self.fkwargs = fkwargs or {}
+        self.ctx =  ctx or AxoContext()
 
         # Defaults
         self.axo_endpoint_id = ""

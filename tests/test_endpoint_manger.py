@@ -1,5 +1,5 @@
 from axo_endpoint.endpoints import EndpointManager
-from mictlanx.v4.summoner.summoner import Summoner
+from mictlanx.services import Summoner
 from option import Some,NONE
 
 
