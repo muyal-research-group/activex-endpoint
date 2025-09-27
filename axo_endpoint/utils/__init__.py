@@ -58,7 +58,7 @@ async def get_ao(
         axo_key:str, 
         axo_alias:str,
         axo_version:int,
-)->Result[Axo,AxoError]:
+)->Result[Tuple[Axo,str,Dict[str,Any]],AxoError]:
     try: 
         _key           = MetadataKey(id = axo_key,version=axo_version,alias=axo_alias)
         maybe_metadata = store.get(key=_key)
@@ -182,7 +182,7 @@ async def get_ao(
         obj = X(**attrs)
         for attr_name, attr_value in attrs.items():
             setattr(obj, attr_name, attr_value) 
-        return Ok(obj)
+        return Ok((obj,source_code,attrs))
     except Exception as e:
         return Err(AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR, msg= str(e)))
 

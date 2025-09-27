@@ -49,12 +49,12 @@ logger = get_logger(name=__name__,path=AXO_LOGGER_PATH,ltype="JSON")
 
 
 
-def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, f, task:Task,envelope:AxoRequestEnvelope) -> Optional[Tuple[int,ChunkRef,Chunk]]:
+def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, task:Task,envelope:AxoRequestEnvelope) -> Optional[Tuple[int,ChunkRef,Chunk]]:
     """
     Worker for the FIRST pass.
     Fetches a source chunk, runs the function, and returns the resulting Chunk object.
     """
-    logger = get_logger(name=f"axo-worker-{os.getpid()}",path=AXO_LOGGER_PATH,ltype="JSON")
+    logger         = get_logger(name=f"axo-worker-{os.getpid()}",path=AXO_LOGGER_PATH,ltype="JSON")
     storage_client = MictlanXClient(
         client_id            = config.MICTLANX_CLIENT_ID,
         debug                = config.MICTLANX_DEBUG,
@@ -66,11 +66,21 @@ def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, f, task:
     )
     async def _run_async_part() -> Optional[Tuple[int,ChunkRef,Chunk]]:
         try:
-            index         = source_met.tags.get("index", -1)
+            # ao_source = task.ao_source
+            # exec(ao_source, globals())
+            # print("HERE AO SOURCE")
+            ao_state      = task.ao_state
+            # print("HERE AO STATE", ao_state)
+            local_ao      = CP.loads(ao_state)
+
+            index         = int(source_met.tags.get("index", "-1"))
             source_bucket = source_met.bucket_id
             ball_id       = source_met.ball_id
             key           = source_met.key
-            method        = envelope.method
+            method_name   = envelope.method
+            _f             = getattr(local_ao, method_name)
+            base_f        = inspect.unwrap(_f)
+            f             = __axo_task(base_f)                
 
             if index == -1: 
                 logger.warning({
@@ -79,7 +89,7 @@ def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, f, task:
                     "bucket_id":source_bucket,
                     "ball_id":ball_id,
                     "key":key,
-                    "method":method,
+                    "method":method_name,
                 })
                 return None
 
@@ -94,13 +104,16 @@ def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, f, task:
                     "bucket_id":source_bucket,
                     "ball_id":ball_id,
                     "key":key,
-                    "method":method,
+                    "method":method_name,
                     "detail":str(source_result.unwrap_err()),
                 })
                 return None
             (chunk, _) = source_result.unwrap()
-
+            print("Data Chunk", chunk.data.tobytes())
+            
+            t0 = T.time()
             f_result: Result[Any, Exception] = await f(*task.fargs, **{**task.fkwargs, "source": chunk.data, "ctx": task.ctx})
+
             if f_result.is_err: 
                 e = f_result.unwrap_err()
                 logger.error({
@@ -109,14 +122,24 @@ def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, f, task:
                     "ball_id":ball_id,
                     "key":key,
                     "index":index,
-                    "method":method,
+                    "method":method_name,
                     "detail":str(e)
                 })               
                 return None
             
             result_chunk_data = f_result.unwrap()
+            print("F_RESULT_DATA", result_chunk_data)
+
             result_ball_id = f"{ball_id}_result"
-            
+            logger.info({
+                "event":"F.EXEC",
+                "bucket_id":source_met.bucket_id,
+                "ball_id":source_met.ball_id,
+                "key":source_met.key,
+                "index":index,
+                "ok":f_result.is_ok,
+                "response_time":T.time() - t0
+            })
             result_chunk =  Chunk.from_bytes(
                 data     = result_chunk_data,
                 group_id = result_ball_id,
@@ -134,7 +157,16 @@ def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, f, task:
                 tags     = result_chunk.metadata    
             )
             return (index,chunk_ref,result_chunk)
-        except Exception:
+        except Exception as e:
+            logger.error({
+                "error":"PROCESS.CHUNK.FAILED",
+                "bucket_id":source_met.bucket_id,
+                "ball_id":source_met.ball_id,
+                "key":source_met.key,
+                "index":source_met.tags.get("index", -1),
+                "method":envelope.method,
+                "detail":str(e)
+            })
             return None
 
     return asyncio.run(_run_async_part())
@@ -147,24 +179,37 @@ def upload_chunk_worker(
         total_size:int,
         num_chunks:int,
         task:Task,
-        storage_client:MictlanXClient,
+        config:Config
+        # storage_client:MictlanXClient,
 ):
     """
     Worker for the SECOND pass.
     Takes a processed chunk, updates its metadata, and uploads it.
     """
     logger = get_logger(name=f"axo-worker-{os.getpid()}",path=AXO_LOGGER_PATH,ltype="JSON")
+    storage_client = MictlanXClient(
+        client_id            = config.MICTLANX_CLIENT_ID,
+        debug                = config.MICTLANX_DEBUG,
+        log_interval         = config.MICTLANX_LOG_INTERVAL,
+        log_when             = config.MICTLANX_LOG_WHEN,
+        log_output_path      = config.MICTLANX_LOG_OUTPUT_PATH,
+        max_workers          = config.MICTLANX_MAX_WORKERS,
+        uri                  = config.MICTLANX_URI
+    )
     async def _run_async_part() -> Optional[ChunkRef]:
         try:
             processed_chunk.metadata["full_checksum"] = final_checksum
             processed_chunk.metadata["total_size"] = str(total_size)
             processed_chunk.metadata["num_chunks"] = str(num_chunks)
 
+            print("UPDATED METADATA", processed_chunk.metadata)
+            print("STORAGE CLIENT", storage_client)
             put_result = await storage_client.put_single_chunk(
-                bucket_id=task.ctx.sink_bucket,
-                ball_id=processed_chunk.group_id,
-                chunk=processed_chunk
+                bucket_id = task.ctx.sink_bucket,
+                ball_id   = processed_chunk.group_id,
+                chunk     = processed_chunk
             )
+            print("PUT RESULT", put_result)
             if put_result.is_err: 
                 logger.error({
                     "error":"PUT.CHUNK.FAILED",
@@ -192,7 +237,7 @@ def upload_chunk_worker(
 async def process_chunks_in_processes(
     ball:InterfaceX.Ball,
     config:Config, 
-    f, 
+    # f, 
     task:Task, 
     envelope:AxoRequestEnvelope,
     max_workers: int = 1
@@ -207,7 +252,7 @@ async def process_chunks_in_processes(
         # --- PASS 1: Process all chunks in parallel ---
         logger.info(f"PASS 1: Processing {len(ball.chunks)} chunks with {max_workers} process(es)...")
         processing_tasks = [
-            loop.run_in_executor(executor, process_chunk_worker, source_met, config, f, task,envelope)
+            loop.run_in_executor(executor, process_chunk_worker, source_met, config, task,envelope)
             for source_met in ball.chunks
         ]
         processed_chunks_results = await asyncio.gather(*processing_tasks)
@@ -331,13 +376,14 @@ async def task_exec(
             e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get s")
             return Err(e)
         
-        ao = ao_result.unwrap()
+        (ao,source_code,attrs) = ao_result.unwrap()
         
 
-        f      = getattr(ao, envelope.method ) 
+        # f      = getattr(ao, envelope.method ) 
 
-        base_f = inspect.unwrap(f)
-        f      = __axo_task(base_f)
+        # base_f = inspect.unwrap(f)
+        # f      = __axo_task(base_f)
+
         # print("_F", f)
         # source = 
         axo_source_bucket_id = task.axo_source_bucket_id if task.ctx.ignore_ss else task.ctx.source_bucket
@@ -365,14 +411,14 @@ async def task_exec(
 
         # Get only the first ball
         ball = list(bucket.balls.values())[0]
-        
-        # ball.build()
-        method = envelope.method
-
+        # print(ball)
+        method         = envelope.method
+        task.ao_state  = CP.dumps(ao)
+        task.ao_source = source_code
         chunk_ref = await process_chunks_in_processes(
             ball        = ball,
             config      = config,
-            f           = f,
+            # f           = f,
             task        = task,
             envelope    = envelope,
             max_workers = task.ctx.parallel or 1
@@ -384,7 +430,7 @@ async def task_exec(
             checksum  = chunk_ref[0].tags.get("full_checksum",""),
             ball_id   = result_ball_id,
             bucket_id = task.ctx.sink_bucket,
-            chunks    = len(chunk_ref),
+            chunks    =  chunk_ref,
             tags      = {
                 "source_bucket": axo_source_bucket_id,
                 "source_ball"  : ball.ball_id,
