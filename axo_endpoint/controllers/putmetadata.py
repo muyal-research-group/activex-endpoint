@@ -36,9 +36,10 @@ logger = get_logger(name=__name__, ltype="JSON",path=AXO_LOGGER_PATH)
 
 
 async def __put_metadata(socket:zmq.Socket,store:KVStore,metadata:MetadataX,task_id:str = "")->Result[str, AxoError]:
+    print("PUT METADATA",metadata)
     start_time = T.time()
-    axo_key        = metadata.axo_key
-    key = MetadataKey(id = axo_key,version=metadata.axo_version,alias=metadata.axo_alias)
+    axo_key    = metadata.axo_key
+    key        = MetadataKey(id = axo_key,version=metadata.axo_version,alias=metadata.axo_alias)
     # print("METADATA",metadata)
     if axo_key == -1:
         e = AxoError.make(error_type=AxoErrorType.BAD_REQUEST, msg="Malformed request: It does not contain id field.")
@@ -116,10 +117,11 @@ async def _ensure_endpoint(endpoint_manager: "DistributedEndpointManager",
         # __deploy_endpoint async in your codebase; keep it awaited if it returns a coroutine
         deploy_result = await U.__deploy_endpoint(
             summoner     = summoner,
-            config=config,
+            config       = config,
             endpoint_id  = endpoint_id,
             req_res_port = req_res_port,
             pubsub_port  = pubsub_port,
+            image        = config.AXO_ENDPOINT_IMAGE
         )
         # deploy_result = await maybe_coro
 
@@ -172,7 +174,6 @@ async def put_metadata(
         # metadata: Dict[str, Any] = task.metadata or {}
         # metadata = task
         h.warm(task_id=task.task_id)  # keep existing behavior (appears sync)
-
         # (Optional) resolve and install dependencies
         try:
             dependencies = task.get_dependencies()
@@ -214,13 +215,15 @@ async def put_metadata(
   
             try:
                 put_res = await asyncio.wait_for(
-                    endpointx.put(key=key, metadata=metadata),
+                    endpointx.put(key=key, value=metadata),
                     timeout=config.AXO_METADATA_TIMEOUT
                 )
             except asyncio.TimeoutError:
                 msg = f"Timeout putting metadata to endpoint '{endpoint_id}'."
                 e = AxoError.make(error_type=AxoErrorType.TIMEOUT, msg = msg)
                 return Err(e)
+            except Exception as e:
+                return Err(AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR, msg=str(e)))   
 
             if put_res.is_ok:
                 logger.info({

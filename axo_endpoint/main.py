@@ -25,8 +25,8 @@ from mictlanx.services import Summoner
 
 # ActivexEndpoitn
 from axo_endpoint.endpoints import EndpointManager
-from axo_endpoint.controllers import put_metadata,method_exeution,elasticity
-from axo_endpoint.utils import install_packages
+# from axo_endpoint.controllers import put_metadata,method_exeution,elasticity
+# from axo_endpoint.utils import install_packages
 import axo_endpoint.utils as U
 from axo_endpoint.store import SimpleStore
 from axo_endpoint.interfaces import Heater
@@ -113,7 +113,13 @@ endpoint_manager_x.add_endpoint(
 )
 
 
-install_packages(packages=config.AXO_ENDPOINT_DEPENDENCIES)
+dependencies_installation_result = U.install_packages(packages=config.AXO_ENDPOINT_DEPENDENCIES)
+if dependencies_installation_result.is_err:
+    logger.warning({
+        "event":"DEPENDENCIES.INSTALLATION.FAILED",
+        "error":str(dependencies_installation_result.unwrap_err())
+    })
+    # sys.exit(1)
 
 
 context = zmq.asyncio.Context()

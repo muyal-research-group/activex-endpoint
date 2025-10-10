@@ -362,7 +362,7 @@ async def method_exeution(
         serde:Serde,
         storage_service:MictlanXClient,
         store:KVStore,
-        req_rep_socket:zmq.Socket,
+        socket:zmq.Socket,
         task:Task,
         envelope: AxoRequestEnvelope,
         config:Config,
@@ -383,19 +383,31 @@ async def method_exeution(
             "endpoint_id":endpoint_id
         })
         ud_endpoint_image = getattr(envelope,"axo_endpoint_image")
-        res = U.__deploy_endpoint(
+        res = await U.__deploy_endpoint(
             summoner     = summoner,
+            req_res_port = endpoint_manager.get_available_req_res_port(),
+            pubsub_port  = endpoint_manager.get_available_pubsub_port(),
             config       = config,
             dependencies = dependencies,
             endpoint_id  = endpoint_id,
-            image        =  ud_endpoint_image or config.AXO_ENDPOINT_IMAGE
+            image        = ud_endpoint_image or config.AXO_ENDPOINT_IMAGE
         )
+        if res.is_err:
+            e = res.unwrap_err()
+            await U.send_error_axo(
+                socket    = socket,
+                operation = envelope.operation,
+                task_id   = envelope.task_id,
+                msg_id    = envelope.msg_id,
+                error     = e
+            )
+            return Err(e)
 
     result = await __method_execution(
         serde           = serde,
         storage_client = storage_service,
         store           = store,
-        socket  = req_rep_socket,
+        socket  = socket,
         task            = task,
         envelope=envelope
     )

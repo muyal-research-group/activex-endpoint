@@ -3,6 +3,7 @@ import zmq
 import time as T
 import cloudpickle as CP
 import inspect
+from uuid import uuid4
 
 from functools import wraps
 import hashlib as H
@@ -133,9 +134,9 @@ def process_chunk_worker(source_met:InterfaceX.Metadata, config:Config, task:Tas
             result_ball_id = f"{ball_id}_result"
             logger.info({
                 "event":"F.EXEC",
-                "bucket_id":source_met.bucket_id,
-                "ball_id":source_met.ball_id,
-                "key":source_met.key,
+                "source_bucket_id":source_met.bucket_id,
+                "source_ball_id":source_met.ball_id,
+                "source_key":source_met.key,
                 "index":index,
                 "ok":f_result.is_ok,
                 "response_time":T.time() - t0
@@ -198,18 +199,19 @@ def upload_chunk_worker(
     )
     async def _run_async_part() -> Optional[ChunkRef]:
         try:
+            t1 = T.time()
             processed_chunk.metadata["full_checksum"] = final_checksum
             processed_chunk.metadata["total_size"] = str(total_size)
             processed_chunk.metadata["num_chunks"] = str(num_chunks)
 
-            print("UPDATED METADATA", processed_chunk.metadata)
-            print("STORAGE CLIENT", storage_client)
+            # print("UPDATED METADATA", processed_chunk.metadata)
+            # print("STORAGE CLIENT", storage_client)
             put_result = await storage_client.put_single_chunk(
-                bucket_id = task.ctx.sink_bucket,
+                bucket_id = task.axo_sink_bucket_id,
                 ball_id   = processed_chunk.group_id,
                 chunk     = processed_chunk
             )
-            print("PUT RESULT", put_result)
+            # print("PUT RESULT", put_result)
             if put_result.is_err: 
                 logger.error({
                     "error":"PUT.CHUNK.FAILED",
@@ -220,6 +222,15 @@ def upload_chunk_worker(
                     "index":processed_chunk.index,
                 })             
                 return None
+
+            logger.info({
+                "event":"PUT.CHUNK",
+                "bucket_id":task.axo_sink_bucket_id,
+                "ball_id":processed_chunk.group_id,
+                "key":processed_chunk.chunk_id,
+                "index":processed_chunk.index,
+                "response_time":T.time() - t1
+            })  
 
             return ChunkRef(
                 index=processed_chunk.index,
@@ -335,30 +346,20 @@ async def task_exec(
         config:Config,
 )->Result[Any,AxoError]:
     try:
+        axo_source_bucket_id = U.validate_or_create_bucket_id(task.get_source_bucket_id() if task.ctx.ignore_ss else task.ctx.source_bucket)
+        axo_sink_bucket_id   = U.validate_or_create_bucket_id(task.get_sink_bucket_id() if task.ctx.ignore_ss else task.ctx.sink_bucket)
+        task.axo_sink_bucket_id   = axo_sink_bucket_id
+        task.axo_source_bucket_id = axo_source_bucket_id
+        print("*"*40)
+        print("SOURCE BUCKET", axo_source_bucket_id)
+        print("SINK BUCKET", axo_sink_bucket_id)
+        print("METADATA",task.ctx.metadata)
+        print("*"*40)
+        # task.ctx.sink_bucket      = axo_sink_bucket_id
+        # task.ctx.source_bucket    = axo_source_bucket_id
+        # 
         heater.warm(task_id=task.task_id)
-        dependencies             = envelope.axo_dependencies
-        deps_installation_result = install_packages(packages=dependencies)
-
-        if deps_installation_result.is_err:
-            logger.warning({
-                "event":"DEPENDENCIES.INSTALLATION.FAILED",
-                "erro":str(deps_installation_result.unwrap_err())
-            })
-        endpoint_id = envelope.axo_endpoint_id
-        exists      = endpoint_manager.exists(endpoint_id=endpoint_id)
-        if not exists:
-            logger.warning({
-                "event":"DEPLOY.ENDPOINT", 
-                "endpoint_id":endpoint_id
-            })
-            ud_endpoint_image = getattr(envelope,"axo_endpoint_image")
-            chunk_ref = U.__deploy_endpoint(
-                summoner     = summoner,
-                config       = config,
-                dependencies = dependencies,
-                endpoint_id  = endpoint_id,
-                image        =  ud_endpoint_image or config.AXO_ENDPOINT_IMAGE
-            )
+        
 
         logger.debug({
             **dict_any_to_dict_str(envelope.__dict__),
@@ -373,27 +374,24 @@ async def task_exec(
             axo_version    = envelope.axo_version
         )
         if ao_result.is_err:
-            e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= "Get s")
+            e  = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= f"Get AO failed - {envelope.axo_bucket_id}/{envelope.axo_key}: {ao_result.unwrap_err()}")
             return Err(e)
         
         (ao,source_code,attrs) = ao_result.unwrap()
         
 
-        # f      = getattr(ao, envelope.method ) 
-
-        # base_f = inspect.unwrap(f)
-        # f      = __axo_task(base_f)
-
-        # print("_F", f)
-        # source = 
-        axo_source_bucket_id = task.axo_source_bucket_id if task.ctx.ignore_ss else task.ctx.source_bucket
-        axo_sink_bucket_id   = task.axo_sink_bucket_id if task.ctx.ignore_ss else task.ctx.sink_bucket
         t1_get_source_bucket = T.time()
-
-        bucket_result = await storage_client.get_bucket_metadata(bucket_id=axo_source_bucket_id)
+        bucket_result        = await storage_client.get_bucket_metadata(bucket_id=axo_source_bucket_id)
         if bucket_result.is_err:
             error_msg = f"Get bucket failed: {axo_source_bucket_id}"
             e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
+            logger.error({
+                "error":"GET.BUCKET.FAILED",
+                "bucket_id":axo_source_bucket_id,
+                "axo_key":envelope.axo_key,
+                "method":envelope.method,
+                "detail":str(bucket_result.unwrap_err()),
+            })
             return Err(e)
         
         bucket = bucket_result.unwrap()
@@ -401,11 +399,19 @@ async def task_exec(
             "event":"GET.BUCKET",
             "bucket_id":axo_source_bucket_id,
             "balls":len(bucket),
+            "axo_key":envelope.axo_key,
+            "method":envelope.method,
             "response_time":T.time()-t1_get_source_bucket
         })
         if len(bucket) ==0:
             error_msg = f"Empty bucket: {axo_source_bucket_id}"
             e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
+            logger.error({
+                "error":"BUCKET.EMPTY",
+                "bucket_id":axo_source_bucket_id,
+                "axo_key":envelope.axo_key,
+                "method":envelope.method,
+            })
             return Err(e)
         
 
@@ -418,7 +424,6 @@ async def task_exec(
         chunk_ref = await process_chunks_in_processes(
             ball        = ball,
             config      = config,
-            # f           = f,
             task        = task,
             envelope    = envelope,
             max_workers = task.ctx.parallel or 1
@@ -429,7 +434,7 @@ async def task_exec(
             v         = 0,
             checksum  = chunk_ref[0].tags.get("full_checksum",""),
             ball_id   = result_ball_id,
-            bucket_id = task.ctx.sink_bucket,
+            bucket_id = axo_sink_bucket_id,
             chunks    =  chunk_ref,
             tags      = {
                 "source_bucket": axo_source_bucket_id,
@@ -445,11 +450,11 @@ async def task_exec(
         ball_ref_data = ball_ref.model_dump_json().encode("utf-8")
         print("BALL_REF_DATA", ball_ref_data)
         await U.send_ok(
-                socket=socket,
-                msg_id=envelope.msg_id,
-                operation=AxoOperationType.TASK_EXEC,
-                task_id=envelope.task_id,
-                payload_frames=[ball_ref_data]
+                socket         = socket,
+                msg_id         = envelope.msg_id,
+                operation      = AxoOperationType.TASK_EXEC,
+                task_id        = envelope.task_id,
+                payload_frames = [ball_ref_data]
         )
         return Ok(True)
     except Exception as ex:

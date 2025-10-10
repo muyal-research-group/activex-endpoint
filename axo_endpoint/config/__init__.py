@@ -22,7 +22,7 @@ class Config:
         self.AXO_SINK_PATH = os.environ.get("AXO_SINK_PATH", "/axo")
         self.AXO_SOURCE_PATH = os.environ.get("AXO_SOURCE_PATH", "/axo/source")
         self.AXO_DATA_PATH = os.environ.get("AXO_DATA_PATH", "/data")
-        self.AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE", "nachocode/axo:endpoint-0.0.3a0")
+        self.AXO_ENDPOINT_IMAGE = os.environ.get("AXO_ENDPOINT_IMAGE", "nachocode/axo:endpoint-0.0.4a3")
         self.AXO_ENDPOINT_DEPENDENCIES_STR = os.environ.get("AXO_ENDPOINT_DEPENDENCIES", "")
         self.AXO_ENDPOINT_DEPENDENCIES = list(filter(lambda x: len(x) > 0, self.AXO_ENDPOINT_DEPENDENCIES_STR.split(";")))
         self.AXO_PROTOCOL = os.environ.get("AXO_PROTOCOL", "tcp")

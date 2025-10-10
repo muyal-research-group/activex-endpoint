@@ -78,6 +78,7 @@ async def put_metadata_op(
         heater.warm(task_id=task.task_id)
 
         metadata         = envelope.get_metadatax()
+        # print("PUT METADATA OP",metadata)
         res = await put_metadata(
             store            = store,
             socket           = socket,           # kept for signature compatibility, but controller should not send
@@ -99,7 +100,6 @@ async def put_metadata_op(
             )
             return Err(err)
 
-        # Optionally echo stored key / object info in reply envelope
         await U.send_ok(
             socket=socket,
             operation=task.operation,
@@ -164,7 +164,7 @@ async def method_exec_op(
             serde            = serde,
             storage_service  = storage_service,
             store            = store,
-            req_rep_socket   = socket,           # kept for signature; do not use to send
+            socket   = socket,           # kept for signature; do not use to send
             task             = task,
             envelope         = envelope,
             config           = config,
@@ -208,17 +208,55 @@ async def task_exec_op(
     heater: Heater,
 ) -> Result[None, Exception]:
     t0 = T.time()
+    endpoint_id = envelope.axo_endpoint_id
+    exists      = endpoint_manager.exists(endpoint_id=endpoint_id)
+    
+    dependencies             = envelope.axo_dependencies
+    deps_installation_result = U.install_packages(packages=dependencies)
+
+    if deps_installation_result.is_err:
+        logger.warning({
+            "event":"DEPENDENCIES.INSTALLATION.FAILED",
+            "error":str(deps_installation_result.unwrap_err())
+        })
+
+    if not exists:
+        logger.warning({
+            "event":"DEPLOY.ENDPOINT", 
+            "endpoint_id":endpoint_id,
+            "node_id":config.AXO_ENDPOINT_ID,
+        })
+        ud_endpoint_image = getattr(envelope,"axo_endpoint_image")
+        # i = endpoint_manager.get
+        deploy_endpoint_result = await U.__deploy_endpoint(
+            summoner     = summoner,
+            endpoint_id  = endpoint_id,
+            req_res_port = endpoint_manager.get_available_req_res_port(),
+            pubsub_port  = endpoint_manager.get_available_pubsub_port(),
+            config       = config,
+            dependencies = dependencies,
+            image        =  ud_endpoint_image or config.AXO_ENDPOINT_IMAGE
+        )
+        if deploy_endpoint_result.is_err:
+            e = deploy_endpoint_result.unwrap_err()
+            _ = await U.send_error_axo(socket=socket, operation=envelope.operation, task_id = envelope.task_id,msg_id=envelope.msg_id, error = e)
+            return Err(e)
+
+            # return Err(chunk_ref.unwrap_err() ) 
+
+    print("*"*40)
+    print("BEFORE TASK_EXEC")
     exec_res = await task_exec(
-        store=store,
-        socket=socket,        # keep for signature; avoid sending inside
-        serde=serde,
-        storage_client=storage_service,
-        endpoint_manager=endpoint_manager,
-        heater=heater,
-        task=task,
-        envelope=envelope,
-        config=config,
-        summoner=summoner, 
+        store            = store,
+        socket           = socket,             # keep for signature; avoid sending inside
+        serde            = serde,
+        storage_client   = storage_service,
+        endpoint_manager = endpoint_manager,
+        heater           = heater,
+        task             = task,
+        envelope         = envelope,
+        config           = config,
+        summoner         = summoner,
     )
     if exec_res.is_err:
         e = exec_res.unwrap_err()

@@ -49,7 +49,10 @@ AXO_DEBUG         = bool(int(os.environ.get("AXO_DEBUG","1")))
 logger            = get_logger(name=__name__,ltype="JSON",path=AXO_LOGGER_PATH,debug=AXO_DEBUG)
 
 
-
+def validate_or_create_bucket_id(bucket_id:str):
+    if bucket_id is None or bucket_id.strip() == "":
+        return "axo_bucket_{}".format(nanoid(alphabet=string.ascii_lowercase+string.digits, size=8 ))
+    return bucket_id
 
 async def get_ao(
         store: KVStore,
@@ -80,11 +83,20 @@ async def get_ao(
                 bucket_id     = axo_bucket_id,
                 ball_id       = f"{axo_key}_source_code",
             )
+
+
+
             # Check if get_metadata got an error_____________________________________________
             if get_metadata_result.is_err:
-                error_msg = f"Metadata not found: {axo_key}"
-                e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
-                return Err(e)
+                get_metadata_result:Result[InterfaceX.Ball,Exception] = await storage_client.get_metadata(
+                    bucket_id     = axo_bucket_id,
+                    ball_id       = f"{axo_key}_source_code_0",
+                )
+                print("SECOND_CHECK",get_metadata_result)
+                if get_metadata_result.is_err:
+                    error_msg = f"Metadata not found: {axo_key}"
+                    e         = AxoError.make(error_type=AxoErrorType.STORAGE_ERROR, msg= error_msg)
+                    return Err(e)
             # _______________________________________________________________________________________
 
             remote_metadata = get_metadata_result.unwrap()
@@ -97,6 +109,7 @@ async def get_ao(
             # remote_metadata.tags
             # await put_metadata()
             local_tags = remote_metadata.chunks[0].tags
+            print("LOCAL_TAGS",local_tags)
             store.put(key=_key, value=local_tags )
             maybe_metadata = Some(MetadataX.model_validate(local_tags))
 
@@ -208,7 +221,8 @@ async def extract_task_envolope(socket:zmq.asyncio.Socket, )->Result[Tuple[Task,
             "event": "TASK.RECEIVED",
             "operation": task.operation,
             "task_id": task.task_id,
-            **envelope.model_dump(),
+            "envelope":{**envelope.model_dump()},
+            "task":{**task.to_dict()},
             "service_time":T.time()-_start_time
         })
         return Ok((task,envelope,frames))
@@ -433,12 +447,14 @@ def from_multipart_to_task_and_envelope(
                 return Err(AxoError.make(msg= f"Failed to deserialize METHOD.EXEC args/kwargs: {e}", error_type=AxoErrorType.BAD_REQUEST))
 
             task = Task(
-                namespace="axo",
-                operation=operation,
-                metadata=metadata,
-                fargs=fargs,
-                fkwargs=fkwargs,
+                namespace = "axo",
+                operation = operation,
+                metadata  = metadata,
+                fargs     = fargs,
+                fkwargs   = fkwargs,
             )
+            print("METADDA", metadata)
+            print(task,task.__dict__)
             envelope.task_id = task.task_id
             return Ok((task, envelope, payload))
 
@@ -470,6 +486,9 @@ def from_multipart_to_task_and_envelope(
 
         # PUT.METADATA / others: just pass envelope as metadata
         task = Task(namespace="axo", operation=operation, metadata=metadata)
+        # print("METADATA",metadata)
+        # print("TASK",task.__dict__)
+        # print("ENVELOPE",envelope.__dict__)
         return Ok((task, envelope, payload))
 
     except Exception as e:
@@ -615,12 +634,12 @@ def deploy_endpoint(
             cpu_count     = cpu_count,
             envs          = envs,
             exposed_ports = [
-                ExposedPort(host_port=pubsub_port,container_port=pubsub_port,ip_addr=NONE, protocolo=NONE),
-                ExposedPort(host_port=req_res_port,container_port=req_res_port,ip_addr=NONE, protocolo=NONE),
+                ExposedPort(host_port=pubsub_port,container_port=pubsub_port,ip_addr=None, protocol=None),
+                ExposedPort(host_port=req_res_port,container_port=req_res_port,ip_addr=None, protocol=None),
             ],
-            force    = Some(True),
+            force    = True,
             hostname = endpoint_id,
-            ip_addr  = Some(endpoint_id),
+            ip_addr  = endpoint_id,
             labels   = {
                 "axo"     : "",
                 "axo.type": "endpoint"
@@ -639,16 +658,16 @@ def deploy_endpoint(
                 ),
             ],
             network_id    = config.AXO_NETWORK_ID,
-            selected_node = Some(selected_node),
-            shm_size      = NONE,
+            selected_node = selected_node,
+            shm_size      = None,
         )
-        logger.info({
-            "envet":"DEPLOY.ENDPOINT",
-            "endpoint_id":endpoint_id,
-            "req_res_port":req_res_port,
-            "pubsub_port":pubsub_port,
-            "response_time":T.time()-start_time
-        })
+        # logger.info({
+        #     "envet":"DEPLOY.ENDPOINT",
+        #     "endpoint_id":endpoint_id,
+        #     "req_res_port":req_res_port,
+        #     "pubsub_port":pubsub_port,
+        #     "response_time":T.time()-start_time
+        # })
         return summoner.summon(
             payload= payload,
             mode=AXO_SUMMONER_MODE
@@ -670,12 +689,9 @@ async def __deploy_endpoint(
         config:Config,
         dependencies:List[str]=[],
         image:str = "nachocode/axo:endpoint-0.0.1a4"
-):
+)->Result[DistributedEndpoint,AxoError]:
     try:
         deploy_endpoint_start_time = T.time()
-
-        # pubsub_port = endpoint_manager.get_available_pubsub_port()
-        # req_res_port= endpoint_manager.get_available_req_res_port()
         logger.debug({
             "event":"DEPLOY.ENDPOINT",
             "endpoint_id":endpoint_id,
@@ -683,33 +699,44 @@ async def __deploy_endpoint(
             "req_res_port":req_res_port
         })
         endpoint_deploy_result = deploy_endpoint(
-            summoner=summoner,
-            config= config,
-            endpoint_id=endpoint_id,
-            pubsub_port=pubsub_port,
-            req_res_port=req_res_port,
-            dependencies=dependencies,
-            image=image
-
+            summoner     = summoner,
+            config       = config,
+            endpoint_id  = endpoint_id,
+            pubsub_port  = pubsub_port,
+            req_res_port = req_res_port,
+            dependencies = dependencies,
+            image        = image
         )
         if endpoint_deploy_result.is_ok:
             container_endpoint = endpoint_deploy_result.unwrap()
             logger.info({
                 "event":"DEPLOY.ENDPOINT",
                 "endpoint_id":endpoint_id,
+                "req_res_port":req_res_port,
+                "pubsub_port":pubsub_port,
+                "container_id":container_endpoint.container_id,
                 "response_time":T.time() - deploy_endpoint_start_time
             })
             return Ok(DistributedEndpoint(endpoint_id=endpoint_id, hostname=container_endpoint.ip_addr, req_res_port=req_res_port,pubsub_port=pubsub_port))
         
         else:
-            e = endpoint_deploy_result.unwrap_err()
+            _e    = endpoint_deploy_result.unwrap_err()
+            axo_e = AxoError.make(error_type=AxoErrorType.ENDPOINT_DEPLOY_FAILED, msg=str(_e))
             logger.error({
                 "error":"DEPLOY.ENDPOINT.FAILED",
-                "msg":str(e),
+                "msg":str(axo_e),
                 "endpoint_id":endpoint_id,
                 "req_res_port":req_res_port,
                 "pubsub_port":pubsub_port
             })
-            return Err(e)
+            return Err(axo_e)
     except Exception as e:
-        return Err(e)
+        _e = AxoError.make(error_type=AxoErrorType.INTERNAL_ERROR, msg=str(e))
+        logger.error({
+            "error":"INTERNAL.ERROR",
+            "msg":str(_e),
+            "endpoint_id":endpoint_id,
+            "req_res_port":req_res_port,
+            "pubsub_port":pubsub_port
+        })
+        return Err(_e)

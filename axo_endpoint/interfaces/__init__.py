@@ -1,6 +1,7 @@
 from typing import Dict,Callable, Any,List,Optional
 from nanoid import generate as nanoid 
 import humanfriendly as HF
+# from 
 import time as T
 import asyncio
 from axo.helpers import _generate_id
@@ -64,7 +65,7 @@ class Task:
         METHOD.EXEC → merge metadata + fkwargs
         Others      → just metadata
         """
-        if self.operation == "METHOD.EXEC":
+        if self.operation == "METHOD.EXEC" or self.operation == "TASK.EXEC":
             merged = {**self.metadata, **self.fkwargs}
             return merged
         return self.metadata
@@ -128,3 +129,22 @@ class Task:
             not self.__get_state().get("axo_source_key") and
             len(self.get_source_keys()) == 0
         )
+
+    def to_dict(self):
+        return {
+            "task_id": self.task_id,
+            "namespace": self.namespace,
+            "operation": self.operation,
+            "metadata": self.metadata,
+            "fargs": self.fargs,
+            "fkwargs": self.fkwargs,
+            "ctx": dict([ (str(k), str(v)) for k, v in self.ctx.__dict__.items()  ]),
+            "axo_endpoint_id": self.axo_endpoint_id,
+            "axo_bucket_id": self.axo_bucket_id,
+            "axo_sink_bucket_id": self.axo_sink_bucket_id,
+            "axo_source_bucket_id": self.axo_source_bucket_id,
+            "axo_output_key": self.axo_output_key,
+            "separator": self.separator,
+            "ao_source": self.ao_source
+        }
+        
