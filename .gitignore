@@ -6,4 +6,5 @@ dist/*
 .github/workflows/publish-to-test-pipy-backup.yml
 **/*.lock
 *.tar.gz
-log/
+log/*.[json,csv]
+CLAUDE.md

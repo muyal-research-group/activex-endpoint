@@ -1,4 +1,5 @@
 # tests/test_metrics.py
+# Reference only — tests axo_endpoint/old/ code, not maintained against new code.
 import json
 import math
 import pytest

@@ -1,3 +1,4 @@
+# Reference only — tests axo_endpoint/old/ code, not maintained against new code.
 from axo_endpoint.endpoints import EndpointManager
 from mictlanx.services import Summoner
 from option import Some,NONE

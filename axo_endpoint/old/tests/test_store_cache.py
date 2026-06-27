@@ -1,3 +1,4 @@
+# Reference only — tests axo_endpoint/old/ code, not maintained against new code.
 import pytest
 from option import Some, NONE
 from axo.core.models import MetadataX
