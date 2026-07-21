@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
-from axo_endpoint.core.network.protocol import Command, CommandHandler, CommandResult
+from axo_shared.protocol import Command, CommandHandler, CommandResult
 
 
 class MetricsHandler(CommandHandler):

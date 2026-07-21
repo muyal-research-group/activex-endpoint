@@ -3,7 +3,7 @@ from option import Ok
 
 from axo_endpoint.core.events import InMemoryEventBus
 from axo_endpoint.core.functions import FunctionRegistry
-from axo_endpoint.core.network import Command
+from axo_shared.protocol import Command
 from axo_endpoint.core.runtime import FunctionRuntime, InvocationHandle
 from axo_endpoint.core.storage import InMemoryStorageBackend, StorageKey
 from axo_endpoint.service.handlers import FunctionRegisterHandler, JobSubmitHandler
@@ -29,7 +29,7 @@ def test_register_then_submit_resolves_the_same_function_ref(registry):
         Command(
             operation="FUNCTION_REGISTER",
             content_type="application/octet-stream",
-            envelope={"name": "add", "version": 1},
+            envelope={"function_id": "add", "name": "add"},
             payload=b"fake-code-bytes",
         )
     )
@@ -40,13 +40,14 @@ def test_register_then_submit_resolves_the_same_function_ref(registry):
         runtime=runtime,
         results=InMemoryStorageBackend(),
         event_bus=InMemoryEventBus(),
+        function_registry=registry,
         job_id_fn=lambda: "job1",
     )
     submit_result = submit_handler.handle(
         Command(
             operation="JOB_SUBMIT",
             content_type="application/json",
-            envelope={"function_name": "add", "function_version": 1, "params": {}},
+            envelope={"function_id": "add", "function_name": "add", "function_version": 1, "params": {}},
         )
     )
 

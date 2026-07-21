@@ -1,5 +1,5 @@
 # 
-FROM python:3.9
+FROM python:3.10
 
 # 
 WORKDIR /app
@@ -12,6 +12,7 @@ ENV POETRY_NO_INTERACTION=1 \
 
 COPY poetry.lock  .
 COPY pyproject.toml  .
+COPY axo_shared/ /app/axo_shared/
 RUN touch README.md
 
 RUN poetry config virtualenvs.create false && \

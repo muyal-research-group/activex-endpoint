@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import time
 import threading
-from typing import Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import zmq
 
 from axo_endpoint.core.events.bus import Event, EventBus
-from axo_endpoint.core.network.protocol import CommandDispatcher, CommandHandler, CommandResult
+from axo_shared.protocol import CommandDispatcher, CommandHandler, CommandResult
 from axo_endpoint.core.storage.backend import StorageBackend, StorageKey
 from axo_endpoint.log import DumbLogger, Log
-from axo_endpoint.service.transport import wire
+from axo_endpoint.log.catalog import Component, Event
+from axo_shared import wire
 
 _Logger = Union[Log, DumbLogger]
 
@@ -24,9 +25,10 @@ class RouterServer:
         bind_address: str,
         direct_handlers: Dict[str, CommandHandler],
         dispatcher: CommandDispatcher,
-        results: StorageBackend,
+        results: StorageBackend[StorageKey, Any],
         event_bus: EventBus,
         context: Optional["zmq.Context"] = None,
+        on_request_fn: Optional[Callable[[], None]] = None,
         logger: _Logger = None,
     ) -> None:
         """Binds a socket so the server is ready to start handling requests."""
@@ -38,6 +40,7 @@ class RouterServer:
         self._direct_handlers = direct_handlers
         self._dispatcher = dispatcher
         self._results = results
+        self._on_request_fn = on_request_fn
         self._logger: _Logger = logger or DumbLogger()
 
         self._send_lock = threading.Lock()
@@ -81,8 +84,8 @@ class RouterServer:
         if decode_result.is_err:
             err = decode_result.unwrap_err()
             self._logger.debug_event(
-                "ROUTER.REQUEST_DROPPED",
-                component="router",
+                Event.Router.REQUEST_DROPPED,
+                component=Component.ROUTER,
                 frame_count=len(body),
                 **err.to_dict(),
             )
@@ -90,10 +93,15 @@ class RouterServer:
 
         command = decode_result.unwrap()
         self._logger.debug_event(
-            "ROUTER.REQUEST_RECEIVED",
-            component="router",
+            Event.Router.REQUEST_RECEIVED,
+            component=Component.ROUTER,
             operation=command.operation,
+            content_type=command.content_type,
+            envelope=command.envelope,
         )
+
+        if self._on_request_fn is not None:
+            self._on_request_fn()
 
         t0 = time.monotonic()
         handler = self._direct_handlers.get(command.operation)
@@ -101,8 +109,8 @@ class RouterServer:
             result = handler.handle(command)
             duration_ms = round((time.monotonic() - t0) * 1000, 2)
             self._logger.info_event(
-                "ROUTER.REQUEST_HANDLED",
-                component="router",
+                Event.Router.REQUEST_HANDLED,
+                component=Component.ROUTER,
                 operation=command.operation,
                 status="ok" if result.ok else "error",
                 duration_ms=duration_ms,
@@ -111,8 +119,8 @@ class RouterServer:
             result = self._dispatcher.submit(command)
             duration_ms = round((time.monotonic() - t0) * 1000, 2)
             self._logger.info_event(
-                "ROUTER.REQUEST_DISPATCHED",
-                component="router",
+                Event.Router.REQUEST_DISPATCHED,
+                component=Component.ROUTER,
                 operation=command.operation,
                 status="ok" if result.ok else "error",
                 duration_ms=duration_ms,
@@ -151,9 +159,10 @@ class RouterServer:
             identity = self._job_identities.pop(job_id, None)
         if identity is None:
             self._logger.debug_event(
-                "ROUTER.PUSH_SKIPPED",
-                component="router",
+                Event.Router.PUSH_SKIPPED,
+                component=Component.ROUTER,
                 job_id=job_id,
+                event_type=event.event_type,
             )
             return  # never submitted through this transport instance, or already fetched via poll
 
@@ -175,8 +184,9 @@ class RouterServer:
             },
         )
         self._logger.debug_event(
-            "ROUTER.PUSH_SENT",
-            component="router",
+            Event.Router.PUSH_SENT,
+            component=Component.ROUTER,
             job_id=job_id,
+            event_type=event.event_type,
         )
         self._send(identity, push_result)

@@ -1,41 +1,6 @@
 from __future__ import annotations
 
-import inspect
-from typing import Any, Dict, Optional
-
-
-class AxoError(Exception):
-    """Base class for all endpoint-level failures.
-
-    Subclasses set ``code`` and ``name`` as class-level attributes.
-    Source location (module, function, line) is captured automatically at
-    the call site — one frame up from wherever ``AxoError(...)`` is called.
-    """
-
-    code: int = 0
-    name: str = "AXO_ERROR"
-
-    def __init__(self, message: str = "", context: Optional[Dict[str, Any]] = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.context: Dict[str, Any] = context if context is not None else {}
-        frame = inspect.stack()[1]
-        module_file = frame.filename.rsplit("/", 1)[-1]
-        self.src_module = module_file[:-3] if module_file.endswith(".py") else module_file
-        self.src_fn = frame.function
-        self.src_line = frame.lineno
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Returns all error fields as a flat dict ready to spread into a log event."""
-        d: Dict[str, Any] = {
-            "error_code": self.code,
-            "error_name": self.name,
-            "error_message": self.message,
-        }
-        if self.context:
-            d["error_context"] = self.context
-        return d
-
+from axo_shared.errors import AxoError
 
 # ── 1xxx: client / validation ─────────────────────────────────────────────────
 
@@ -71,6 +36,14 @@ class InvalidStateError(AxoError):
     name = "INVALID_STATE_TRANSITION"
 
 
+class EndpointBusyError(AxoError):
+    """A VIRTUAL_ENV_ASSIGN command arrived while this endpoint has one or
+    more active jobs -- reassignment is only allowed while idle."""
+
+    code = 2004
+    name = "ENDPOINT_BUSY"
+
+
 # ── 3xxx: runtime / execution ─────────────────────────────────────────────────
 
 class WorkerCrashedError(AxoError):
@@ -88,6 +61,32 @@ class InvocationError(AxoError):
     name = "INVOCATION_FAILED"
 
 
+class ContainerError(AxoError):
+    code = 3004
+    name = "CONTAINER_ERROR"
+
+
+class ContainerBootstrapError(AxoError):
+    code = 3005
+    name = "CONTAINER_BOOTSTRAP_ERROR"
+
+
+class ContainerCrashError(AxoError):
+    code = 3006
+    name = "CONTAINER_CRASH_ERROR"
+
+
+class JobTimeoutError(AxoError):
+    """A job's own configured RuntimeSpec.max_duration_seconds elapsed with
+    no result -- an intentional, expected outcome (the worker/container is
+    presumably still alive, just over its allotted time), distinct from
+    WorkerCrashedError/ContainerCrashError, which mean the worker/container
+    itself died."""
+
+    code = 3007
+    name = "JOB_TIMEOUT"
+
+
 # ── 4xxx: infrastructure ──────────────────────────────────────────────────────
 
 class QueueFullError(AxoError):
@@ -101,22 +100,83 @@ class DispatcherClosedError(AxoError):
 
 
 class StorageFailureError(AxoError):
+    """Wire-safe wrapper a handler raises around a raw StorageBackend failure.
+
+    Not related by inheritance to storage.backend.StorageError (code 8000) --
+    see that class's docstring for why they're deliberate siblings, not a
+    hierarchy.
+    """
+
     code = 4003
     name = "STORAGE_ERROR"
 
 
 # ── 5xxx: transport / wire ────────────────────────────────────────────────────
+# (MalformedFrameCountError/MalformedEnvelopeError/MalformedMetadataError moved
+# to axo_shared.errors — they're used by axo_shared.wire, which must not
+# depend back on axo_endpoint.)
 
-class MalformedFrameCountError(AxoError):
-    code = 5001
-    name = "MALFORMED_FRAME_COUNT"
+# ── 6xxx: chunked data upload ─────────────────────────────────────────────────
+
+class DataNotRegisteredError(AxoError):
+    """A chunk (or a status/read query) named a (name, version) that has
+    never been through DATA_REGISTER on this node."""
+
+    code = 6001
+    name = "DATA_NOT_REGISTERED"
 
 
-class MalformedEnvelopeError(AxoError):
-    code = 5002
-    name = "MALFORMED_ENVELOPE"
+class ChunkIndexOutOfRangeError(AxoError):
+    code = 6002
+    name = "CHUNK_INDEX_OUT_OF_RANGE"
 
 
-class MalformedMetadataError(AxoError):
-    code = 5003
-    name = "MALFORMED_METADATA"
+class ChunkSizeMismatchError(AxoError):
+    code = 6003
+    name = "CHUNK_SIZE_MISMATCH"
+
+
+class StreamNotOpenError(AxoError):
+    """append_chunk/finalize_stream called for a (name, version) with no
+    preceding open_stream on this node."""
+
+    code = 6004
+    name = "STREAM_NOT_OPEN"
+
+
+class StreamAlreadyFinalizedError(AxoError):
+    code = 6005
+    name = "STREAM_ALREADY_FINALIZED"
+
+
+# ── 7xxx: data buckets ────────────────────────────────────────────────────────
+
+class BucketNotFoundError(AxoError):
+    """A namespaced DATA_REGISTER (or BUCKET_REGISTER lookup) named a bucket
+    that has never been through BUCKET_REGISTER on this node."""
+
+    code = 7001
+    name = "BUCKET_NOT_FOUND"
+
+
+class BucketAlreadyExistsError(AxoError):
+    code = 7002
+    name = "BUCKET_ALREADY_EXISTS"
+
+
+class QuotaExceededError(AxoError):
+    """A DATA_REGISTER into a bucket would push that bucket's total
+    registered size over its declared quota_bytes."""
+
+    code = 7003
+    name = "QUOTA_EXCEEDED"
+
+
+# ── 8xxx: job result replication ──────────────────────────────────────────────
+
+class ResultHashMismatchError(AxoError):
+    """A JOB_RESULT_SYNC/JOB_RESULT_REPLICATE payload's hash didn't match the
+    hash declared alongside it -- the copy is discarded, never stored."""
+
+    code = 8001
+    name = "RESULT_HASH_MISMATCH"

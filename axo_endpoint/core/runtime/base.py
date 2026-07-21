@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from option import Result
 
@@ -19,10 +19,18 @@ class FunctionRuntimeError(AxoError):
 
 @dataclass(frozen=True)
 class InvocationHandle:
-    """Confirms that a job was accepted for execution."""
+    """Confirms that a job was accepted for execution. version/started_at
+    are None on the "accepted" handle invoke() returns and on any handle
+    built before a job was ever actually dispatched to a worker/container
+    (e.g. a cold-start readiness timeout, or a job still queued behind a
+    crashed worker) -- both are only meaningfully populated once dispatch
+    has actually happened, so downstream consumers (build_completion_recorder)
+    must treat them as optional."""
 
     job_id: str
     function_id: str
+    version: Optional[int] = None
+    started_at: Optional[float] = None
 
 
 @dataclass(frozen=True)

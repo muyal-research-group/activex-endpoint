@@ -3,13 +3,14 @@ import zmq
 from option import Ok
 
 from axo_endpoint.core.events import Event, InMemoryEventBus
-from axo_endpoint.core.network import Command, CommandResult
+from axo_endpoint.core.functions import FunctionRegistry
+from axo_shared.protocol import Command, CommandResult
 from axo_endpoint.core.results import FunctionResult
 from axo_endpoint.core.runtime import FunctionRuntime, InvocationHandle
 from axo_endpoint.core.storage import InMemoryStorageBackend, StorageKey
 from axo_endpoint.dispatch import InMemoryCommandDispatcher
 from axo_endpoint.service.handlers import JobResultHandler, JobSubmitHandler, PingHandler, build_completion_recorder
-from axo_endpoint.service.transport import wire
+from axo_shared import wire
 from axo_endpoint.service.transport.router_server import RouterServer
 
 
@@ -64,6 +65,92 @@ def test_ping_round_trips_over_router_dealer(tmp_path, dealer):
     dispatcher.close()
 
 
+def test_on_request_fn_called_for_direct_handler_path(tmp_path, dealer):
+    address = _bind_address(tmp_path, "direct")
+    dispatcher = InMemoryCommandDispatcher(max_queue_size=10, worker_count=1)
+    calls = []
+    server = RouterServer(
+        bind_address=address,
+        direct_handlers={wire.PING: PingHandler()},
+        dispatcher=dispatcher,
+        results=InMemoryStorageBackend(),
+        event_bus=InMemoryEventBus(),
+        on_request_fn=lambda: calls.append(1),
+    )
+    server.start()
+    dealer.connect(address)
+
+    _send_command(dealer, Command(operation=wire.PING, content_type="application/json", envelope={}))
+    assert len(calls) == 1
+
+    server.stop()
+    dispatcher.close()
+
+
+def test_on_request_fn_called_for_dispatcher_routed_path(tmp_path, dealer):
+    address = _bind_address(tmp_path, "dispatched")
+    results_store = InMemoryStorageBackend()
+    event_bus = InMemoryEventBus()
+    calls = []
+
+    dispatcher = InMemoryCommandDispatcher(max_queue_size=10, worker_count=2)
+    dispatcher.register_handler(
+        wire.JOB_SUBMIT,
+        JobSubmitHandler(
+            runtime=_ControllableRuntime(), results=results_store, event_bus=event_bus,
+            function_registry=FunctionRegistry(backend=InMemoryStorageBackend(), event_bus=event_bus),
+            job_id_fn=lambda: "job1",
+        ),
+    )
+
+    server = RouterServer(
+        bind_address=address,
+        direct_handlers={},
+        dispatcher=dispatcher,
+        results=results_store,
+        event_bus=event_bus,
+        on_request_fn=lambda: calls.append(1),
+    )
+    server.start()
+    dealer.connect(address)
+
+    _send_command(
+        dealer,
+        Command(
+            operation=wire.JOB_SUBMIT,
+            content_type="application/json",
+            envelope={"function_id": "add", "function_name": "add", "function_version": 1, "params": {}},
+        ),
+    )
+    assert len(calls) == 1
+
+    server.stop()
+    dispatcher.close()
+
+
+def test_malformed_request_does_not_call_on_request_fn(tmp_path, dealer):
+    address = _bind_address(tmp_path, "malformed")
+    dispatcher = InMemoryCommandDispatcher(max_queue_size=10, worker_count=1)
+    calls = []
+    server = RouterServer(
+        bind_address=address,
+        direct_handlers={wire.PING: PingHandler()},
+        dispatcher=dispatcher,
+        results=InMemoryStorageBackend(),
+        event_bus=InMemoryEventBus(),
+        on_request_fn=lambda: calls.append(1),
+    )
+    server.start()
+    dealer.connect(address)
+
+    dealer.send_multipart([b"too-few-frames"])
+    _send_command(dealer, Command(operation=wire.PING, content_type="application/json", envelope={}))
+    assert len(calls) == 1  # only the well-formed PING counted, not the malformed frame
+
+    server.stop()
+    dispatcher.close()
+
+
 def test_malformed_request_is_dropped_without_crashing_server(tmp_path, dealer):
     address = _bind_address(tmp_path)
     dispatcher = InMemoryCommandDispatcher(max_queue_size=10, worker_count=1)
@@ -95,7 +182,11 @@ def test_job_submit_returns_queued_then_pushes_completion_unsolicited(tmp_path, 
     dispatcher = InMemoryCommandDispatcher(max_queue_size=10, worker_count=2)
     dispatcher.register_handler(
         wire.JOB_SUBMIT,
-        JobSubmitHandler(runtime=_ControllableRuntime(), results=results_store, event_bus=event_bus, job_id_fn=lambda: "job1"),
+        JobSubmitHandler(
+            runtime=_ControllableRuntime(), results=results_store, event_bus=event_bus,
+            function_registry=FunctionRegistry(backend=InMemoryStorageBackend(), event_bus=event_bus),
+            job_id_fn=lambda: "job1",
+        ),
     )
     dispatcher.register_handler(wire.JOB_RESULT, JobResultHandler(results=results_store))
 
@@ -114,7 +205,7 @@ def test_job_submit_returns_queued_then_pushes_completion_unsolicited(tmp_path, 
         Command(
             operation=wire.JOB_SUBMIT,
             content_type="application/json",
-            envelope={"function_name": "add", "function_version": 1, "params": {}},
+            envelope={"function_id": "add", "function_name": "add", "function_version": 1, "params": {}},
         ),
     )
     assert submit_result.ok is True
@@ -143,7 +234,11 @@ def test_job_result_polling_still_works_when_push_target_is_unknown(tmp_path, de
     dispatcher = InMemoryCommandDispatcher(max_queue_size=10, worker_count=2)
     dispatcher.register_handler(
         wire.JOB_SUBMIT,
-        JobSubmitHandler(runtime=_ControllableRuntime(), results=results_store, event_bus=event_bus, job_id_fn=lambda: "job1"),
+        JobSubmitHandler(
+            runtime=_ControllableRuntime(), results=results_store, event_bus=event_bus,
+            function_registry=FunctionRegistry(backend=InMemoryStorageBackend(), event_bus=event_bus),
+            job_id_fn=lambda: "job1",
+        ),
     )
     dispatcher.register_handler(wire.JOB_RESULT, JobResultHandler(results=results_store))
 
@@ -162,7 +257,7 @@ def test_job_result_polling_still_works_when_push_target_is_unknown(tmp_path, de
         Command(
             operation=wire.JOB_SUBMIT,
             content_type="application/json",
-            envelope={"function_name": "add", "function_version": 1, "params": {}},
+            envelope={"function_id": "add", "function_name": "add", "function_version": 1, "params": {}},
         ),
     )
     job_id = submit_result.metadata["job_id"]
@@ -194,7 +289,11 @@ def test_polling_a_completed_result_prevents_a_later_duplicate_push(tmp_path, de
     dispatcher = InMemoryCommandDispatcher(max_queue_size=10, worker_count=2)
     dispatcher.register_handler(
         wire.JOB_SUBMIT,
-        JobSubmitHandler(runtime=_ControllableRuntime(), results=results_store, event_bus=event_bus, job_id_fn=lambda: "job1"),
+        JobSubmitHandler(
+            runtime=_ControllableRuntime(), results=results_store, event_bus=event_bus,
+            function_registry=FunctionRegistry(backend=InMemoryStorageBackend(), event_bus=event_bus),
+            job_id_fn=lambda: "job1",
+        ),
     )
     dispatcher.register_handler(wire.JOB_RESULT, JobResultHandler(results=results_store))
 
@@ -213,7 +312,7 @@ def test_polling_a_completed_result_prevents_a_later_duplicate_push(tmp_path, de
         Command(
             operation=wire.JOB_SUBMIT,
             content_type="application/json",
-            envelope={"function_name": "add", "function_version": 1, "params": {}},
+            envelope={"function_id": "add", "function_name": "add", "function_version": 1, "params": {}},
         ),
     )
     job_id = submit_result.metadata["job_id"]

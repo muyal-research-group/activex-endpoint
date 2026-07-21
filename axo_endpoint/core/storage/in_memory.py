@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Generic, Optional, Tuple, TypeVar
+from typing import Dict, Generic, List, Optional, Tuple, TypeVar
 
 from option import Ok, Result
 
@@ -9,7 +9,7 @@ from axo_endpoint.core.storage.backend import StorageBackend, StorageError, Stor
 V = TypeVar("V")
 
 
-class InMemoryStorageBackend(StorageBackend[V], Generic[V]):
+class InMemoryStorageBackend(StorageBackend[StorageKey, V], Generic[V]):
     """Process-local, dict-backed StorageBackend. Not persisted across restarts."""
 
     def __init__(self) -> None:
@@ -40,6 +40,21 @@ class InMemoryStorageBackend(StorageBackend[V], Generic[V]):
         """Checks whether a value exists for a key."""
         return Ok(self.get(key).unwrap() is not None)
 
+    def delete(self, key: StorageKey) -> Result[None, StorageError]:
+        """Removes a value and cleans up both reverse-lookup indexes."""
+        self._storage.pop(key, None)
+        if key.version is not None:
+            self._by_id_version.pop((key.id, key.version), None)
+            if key.alias is not None:
+                self._by_alias_version.pop((key.alias, key.version), None)
+        return Ok(None)
+
+    def list_versions(self, id: str) -> Result[List[StorageKey], StorageError]:
+        """Every key currently stored under this id, across all versions --
+        used by FunctionRegistry.register() to compute
+        next_version = max(existing versions, default=0) + 1."""
+        return Ok([k for k in self._storage if k.id == id])
+
     def get_by_id(self, id: str) -> Result[Optional[V], StorageError]:
         """Looks up the newest version stored under an id."""
         keys = [k for k in self._storage if k.id == id]
@@ -65,3 +80,10 @@ class InMemoryStorageBackend(StorageBackend[V], Generic[V]):
         """Looks up a specific version stored under an alias."""
         key = self._by_alias_version.get((alias, version))
         return Ok(self._storage[key] if key is not None else None)
+
+    def values(self) -> List[V]:
+        """Every value currently stored, in no particular order -- a
+        concrete-only convenience (like get_by_id/etc.) for a caller that
+        needs to enumerate everything it knows about, e.g. the replication
+        loop diffing every registered DataRecord against peers."""
+        return list(self._storage.values())

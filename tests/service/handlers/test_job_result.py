@@ -1,6 +1,6 @@
 import pytest
 
-from axo_endpoint.core.network import Command
+from axo_shared.protocol import Command
 from axo_endpoint.core.results import FunctionResult
 from axo_endpoint.core.storage import InMemoryStorageBackend, StorageKey
 from axo_endpoint.service.handlers import JobResultHandler

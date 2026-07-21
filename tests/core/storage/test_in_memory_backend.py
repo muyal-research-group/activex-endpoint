@@ -73,3 +73,31 @@ def test_put_returns_ok_with_id():
     result = backend.put(StorageKey(id="k3", version=1), "data4")
     assert result.is_ok
     assert result.unwrap() == "k3"
+
+
+def test_delete_removes_value_and_both_indexes(backend):
+    key = StorageKey(id="k1", version=1, alias="alpha")
+    assert backend.delete(key).is_ok
+    assert backend.get(key).unwrap() is None
+    assert backend.get_by_id_version("k1", 1).unwrap() is None
+    assert backend.get_by_alias_version("alpha", 1).unwrap() is None
+    # version 2 (different alias) is untouched
+    assert backend.get_by_id_version("k1", 2).unwrap() == "data2"
+
+
+def test_delete_missing_key_is_not_an_error():
+    backend = InMemoryStorageBackend()
+    result = backend.delete(StorageKey(id="missing", version=1))
+    assert result.is_ok
+
+
+def test_list_versions_returns_every_version_under_id(backend):
+    result = backend.list_versions("k1")
+    assert result.is_ok
+    assert sorted(k.version for k in result.unwrap()) == [1, 2]
+
+
+def test_list_versions_empty_for_unknown_id(backend):
+    result = backend.list_versions("missing")
+    assert result.is_ok
+    assert result.unwrap() == []

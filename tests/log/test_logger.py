@@ -20,7 +20,7 @@ def test_dumb_logger_is_a_noop():
     assert logger.error("boom", exc_info=True) is None
 
 
-def test_disabled_log_attaches_only_null_handler(clean_log_env):
+def test_disabled_log_attaches_only_null_handler(clean_env):
     logger = Log(name="test-disabled", disabled=True)
     assert len(logger.handlers) == 1
     assert isinstance(logger.handlers[0], logging.NullHandler)
@@ -28,7 +28,7 @@ def test_disabled_log_attaches_only_null_handler(clean_log_env):
     logger.info_event("TEST.EVENT", message="hi")
 
 
-def test_info_event_emits_parseable_json(clean_log_env, capsys):
+def test_info_event_emits_parseable_json(clean_env, capsys):
     logger = Log(
         name="test-console",
         disabled=False,
@@ -46,7 +46,7 @@ def test_info_event_emits_parseable_json(clean_log_env, capsys):
     assert data["level"] == "INFO"
 
 
-def test_to_file_and_error_log_construct_handlers_without_error(clean_log_env, tmp_path):
+def test_to_file_and_error_log_construct_handlers_without_error(clean_env, tmp_path):
     logger = Log(
         name="test-file",
         disabled=False,
@@ -54,6 +54,7 @@ def test_to_file_and_error_log_construct_handlers_without_error(clean_log_env, t
         error_log=True,
         use_rich=False,
         path=str(tmp_path),
+        filename="axo_endpoint",
     )
     # output_path/error_output_path were left as None, exercising the
     # fallback chain down to "{path}/{filename}.log".

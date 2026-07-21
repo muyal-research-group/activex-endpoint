@@ -8,3 +8,5 @@ dist/*
 *.tar.gz
 log/*.[json,csv]
 CLAUDE.md
+plans/
+.vscode/

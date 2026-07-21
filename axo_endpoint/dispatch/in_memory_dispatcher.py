@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Union
 
 from axo_endpoint.core.errors import DispatcherClosedError, QueueFullError, UnknownOperationError
-from axo_endpoint.core.network.protocol import Command, CommandDispatcher, CommandHandler, CommandResult
+from axo_shared.protocol import Command, CommandDispatcher, CommandHandler, CommandResult
 from axo_endpoint.log import DumbLogger, Log
+from axo_endpoint.log.catalog import Component, Event
 
 _Logger = Union[Log, DumbLogger]
 
@@ -45,8 +46,8 @@ class InMemoryCommandDispatcher(CommandDispatcher):
         if self._closed:
             err = DispatcherClosedError("dispatcher is closed", context={"operation": command.operation})
             self._logger.debug_event(
-                "DISPATCHER.CLOSED",
-                component="dispatcher",
+                Event.Dispatcher.CLOSED,
+                component=Component.DISPATCHER,
                 operation=command.operation,
                 **err.to_dict(),
             )
@@ -59,8 +60,8 @@ class InMemoryCommandDispatcher(CommandDispatcher):
                 context={"operation": command.operation},
             )
             self._logger.debug_event(
-                "DISPATCHER.UNKNOWN_OPERATION",
-                component="dispatcher",
+                Event.Dispatcher.UNKNOWN_OPERATION,
+                component=Component.DISPATCHER,
                 operation=command.operation,
                 **err.to_dict(),
             )
@@ -72,8 +73,8 @@ class InMemoryCommandDispatcher(CommandDispatcher):
         except queue.Full:
             err = QueueFullError("queue is at capacity", context={"operation": command.operation})
             self._logger.debug_event(
-                "DISPATCHER.QUEUE_FULL",
-                component="dispatcher",
+                Event.Dispatcher.QUEUE_FULL,
+                component=Component.DISPATCHER,
                 operation=command.operation,
                 **err.to_dict(),
             )
@@ -115,9 +116,10 @@ class InMemoryCommandDispatcher(CommandDispatcher):
                 result = item.handler.handle(item.command)
             except Exception as exc:  # noqa: BLE001 - never let a handler bug escape as a raised exception
                 self._logger.debug_event(
-                    "DISPATCHER.HANDLER_EXC",
-                    component="dispatcher",
+                    Event.Dispatcher.HANDLER_EXC,
+                    component=Component.DISPATCHER,
                     operation=item.command.operation,
+                    error_type=type(exc).__name__,
                     error_message=str(exc),
                 )
                 result = CommandResult(ok=False, error=str(exc))

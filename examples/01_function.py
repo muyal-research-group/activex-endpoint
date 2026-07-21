@@ -49,6 +49,9 @@ def function_to_register(params, ctx):
     print("Context scratch directory:", ctx)
     return result
 
+
+
+
 def main():
     elapsed         = 0
     registry_result = registry.register("test_function",0, cloudpickle.dumps(function_to_register),T.time())

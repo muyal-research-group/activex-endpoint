@@ -4,10 +4,10 @@ import time
 import cloudpickle
 import zmq
 
-from axo_endpoint.core.network import Command
+from axo_shared.protocol import Command
 from axo_endpoint.service.app import App
-from axo_endpoint.service.config import Config
-from axo_endpoint.service.transport import wire
+from axo_endpoint.config import Config
+from axo_shared import wire
 
 
 def _send_command(dealer, command: Command):
@@ -38,7 +38,7 @@ def _poll_until_terminal(dealer, job_id, timeout=10.0):
     raise TimeoutError(f"job {job_id} did not reach a terminal status in time")
 
 
-def test_register_submit_and_poll_result_end_to_end(tmp_path, clean_endpoint_env, monkeypatch):
+def test_register_submit_and_poll_result_end_to_end(tmp_path, clean_env, monkeypatch):
     monkeypatch.setenv("AXO_ENDPOINT_ROUTER_BIND", f"ipc://{tmp_path}/router.sock")
     monkeypatch.setenv("AXO_ENDPOINT_PUB_BIND", f"ipc://{tmp_path}/pub.sock")
     monkeypatch.setenv("AXO_ENDPOINT_SCRATCH_ROOT", str(tmp_path / "scratch"))
@@ -57,7 +57,7 @@ def test_register_submit_and_poll_result_end_to_end(tmp_path, clean_endpoint_env
             Command(
                 operation=wire.FUNCTION_REGISTER,
                 content_type="application/octet-stream",
-                envelope={"name": "add", "version": 1},
+                envelope={"function_id": "add", "name": "add"},
                 payload=cloudpickle.dumps(lambda params, ctx: params["a"] + params["b"]),
             ),
         )
@@ -69,7 +69,7 @@ def test_register_submit_and_poll_result_end_to_end(tmp_path, clean_endpoint_env
             Command(
                 operation=wire.JOB_SUBMIT,
                 content_type="application/json",
-                envelope={"function_name": "add", "function_version": 1, "params": {"a": 2, "b": 3}},
+                envelope={"function_id": "add", "function_name": "add", "function_version": 1, "params": {"a": 2, "b": 3}},
             ),
         )
         assert submit_result.ok is True

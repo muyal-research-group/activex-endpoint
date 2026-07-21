@@ -14,6 +14,8 @@ class PeerInfo:
     rpc_uri: str
     metrics: Dict[str, Any] = field(default_factory=dict)
     last_seen: float = 0.0
+    pub_bind: str = ""
+    latency_ms: float = 0.0
 
 
 class HeartbeatPublisher(ABC):

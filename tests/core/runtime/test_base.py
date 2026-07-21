@@ -22,9 +22,16 @@ def test_invocation_handle_equality_and_immutability():
 
 def test_invocation_handle_has_no_process_concepts():
     handle = InvocationHandle(job_id="j1", function_id="add_one")
-    assert dataclasses.fields(handle.__class__).__len__() == 2
+    field_names = {f.name for f in dataclasses.fields(handle.__class__)}
+    assert field_names == {"job_id", "function_id", "version", "started_at"}
     assert not hasattr(handle, "pid")
     assert not hasattr(handle, "process")
+
+
+def test_invocation_handle_version_and_started_at_default_to_none():
+    handle = InvocationHandle(job_id="j1", function_id="add_one")
+    assert handle.version is None
+    assert handle.started_at is None
 
 
 def test_invocation_context_equality_and_immutability():

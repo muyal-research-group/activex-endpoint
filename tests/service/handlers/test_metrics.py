@@ -1,4 +1,4 @@
-from axo_endpoint.core.network import Command
+from axo_shared.protocol import Command
 from axo_endpoint.service.handlers import MetricsHandler
 
 

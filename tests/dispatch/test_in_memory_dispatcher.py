@@ -1,7 +1,7 @@
 import threading
 import time
 
-from axo_endpoint.core.network import Command, CommandHandler, CommandResult
+from axo_shared.protocol import Command, CommandHandler, CommandResult
 from axo_endpoint.dispatch import InMemoryCommandDispatcher
 
 

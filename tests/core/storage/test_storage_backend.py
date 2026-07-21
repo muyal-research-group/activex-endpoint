@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pytest
 from option import Ok, Result
@@ -11,7 +11,14 @@ def test_storage_backend_cannot_be_instantiated_directly():
         StorageBackend()
 
 
-class _FakeBackend(StorageBackend[str]):
+def test_storage_backend_abc_has_only_put_get_exists_delete_list_versions():
+    # get_by_id/get_by_id_version/get_by_alias/get_by_alias_version are
+    # StorageKey-specific conveniences, not part of the generic contract --
+    # they live only on InMemoryStorageBackend now.
+    assert StorageBackend.__abstractmethods__ == frozenset({"put", "get", "exists", "delete", "list_versions"})
+
+
+class _FakeBackend(StorageBackend[StorageKey, str]):
     """Trivial in-memory implementation used only to exercise the contract."""
 
     def __init__(self):
@@ -37,6 +44,16 @@ class _FakeBackend(StorageBackend[str]):
     def exists(self, key: StorageKey) -> Result[bool, StorageError]:
         result = self.get(key)
         return Ok(result.unwrap() is not None)
+
+    def delete(self, key: StorageKey) -> Result[None, StorageError]:
+        if key.version is not None:
+            self._by_id_version.pop((key.id, key.version), None)
+            if key.alias is not None:
+                self._by_alias_version.pop((key.alias, key.version), None)
+        return Ok(None)
+
+    def list_versions(self, id: str) -> Result[List[StorageKey], StorageError]:
+        return Ok([StorageKey(id=i, version=v) for (i, v) in self._by_id_version if i == id])
 
     def get_by_id(self, id: str) -> Result[Optional[str], StorageError]:
         versions = [v for (i, v) in self._by_id_version if i == id]

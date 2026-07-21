@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "axo_shared"
+version = "0.1.0"
+description = "Shared wire protocol, RPC client, and boundary-crossing models for axo_endpoint and its consumers"
+authors = ["Ignacio Castillo <ignacio.bcastillo@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4"
+pyzmq = "^26.0.3"
+cloudpickle = "^3.0.0"
+option = ">=2.1.0,<3.0.0"
+rich = "^15.0.0"
+pydantic = "^2.11"
+docker = "^7.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
