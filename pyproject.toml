@@ -13,7 +13,7 @@ axec                 = "axo_endpoint.client_cli:main"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4"
-numpy  = "<=1.25"
+numpy  = ">=1.26,<1.27"
 pyzmq = "^26.0.3"
 cloudpickle = "^3.0.0"
 aiofiles = "^23.2.1"
