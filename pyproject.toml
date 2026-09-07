@@ -34,7 +34,7 @@ docker = "^7.1.0"
 fastapi = "^0.115.0"
 uvicorn = {version = "^0.34.0", extras = ["standard"]}
 requests = "^2.32.0"
-pandas = {version = "1.4.3", optional = true}
+pandas = {version = "^2.2", optional = true}
 axo_shared = {path = "axo_shared", develop = true}
 xolo = {version = "0.1.0a4", source = "test"}
 
