@@ -86,9 +86,12 @@ def worker_main(
         token = bind_channel(PipeIOChannel(conn))
         try:
             value = func(params, ctx)
-            conn.send(("result", "ok", value))
+            # 4th element is ctx.warnings, accumulated via ctx.warn() during
+            # the call above -- carried even on success so a function that
+            # warns but still returns cleanly doesn't lose them.
+            conn.send(("result", "ok", value, ctx.warnings))
         except Exception as exc:  # noqa: BLE001 - report it, don't crash the worker for a user bug
-            conn.send(("result", "err", repr(exc)))
+            conn.send(("result", "err", repr(exc), ctx.warnings))
         finally:
             reset_channel(token)
 

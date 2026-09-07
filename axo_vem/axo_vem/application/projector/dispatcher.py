@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Union
 
 from axo_vem.application.projector import (
     bucket_handler,
+    choreography_handler,
     compute_handler,
     identity_handler,
     job_handler,
@@ -24,7 +25,7 @@ _Logger = Union[Log, DumbLogger]
 # is just "pick whichever is present" rather than a per-type mapping.
 _ENTITY_ID_FIELDS = (
     "endpoint_id", "function_id", "user_id", "virtual_environment_id",
-    "job_id", "bucket", "consumer_group",
+    "job_id", "bucket", "consumer_group", "choreography_id",
 )
 
 # Event types with no dedicated aggregate collection of their own -- they
@@ -50,7 +51,7 @@ _ALL_KNOWN_EVENT_TYPES = (
     | {models.FUNCTION_DELETED, models.FUNCTION_ENDPOINT_DETACHED}
     | ACTIVITY_ONLY_EVENT_TYPES | compute_handler.CONSENSUS_EVENT_TYPES
     | _USER_PROFILE_EVENT_TYPES | _VIRTUAL_ENV_EVENT_TYPES | job_handler.JOB_EVENT_TYPES
-    | bucket_handler.BUCKET_EVENT_TYPES
+    | bucket_handler.BUCKET_EVENT_TYPES | choreography_handler.CHOREOGRAPHY_EVENT_TYPES
 )
 
 
@@ -107,6 +108,8 @@ def apply_event(
         job_handler.apply(handlers.job_repository, event_type, data)
     elif event_type in bucket_handler.BUCKET_EVENT_TYPES:
         bucket_handler.apply(handlers.bucket_repository, handlers.data_item_repository, event_type, data, broadcaster)
+    elif event_type in choreography_handler.CHOREOGRAPHY_EVENT_TYPES:
+        choreography_handler.apply(handlers.choreography_repository, event_type, data)
 
     entity_id = next((data[field] for field in _ENTITY_ID_FIELDS if field in data), None)
     _logger.info_event(

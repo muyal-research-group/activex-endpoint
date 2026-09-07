@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from option import Result
 
@@ -35,10 +35,19 @@ class InvocationHandle:
 
 @dataclass(frozen=True)
 class InvocationContext:
-    """Information given to a running function: its job id and a folder for temporary files."""
+    """Information given to a running function: its job id and a folder for
+    temporary files. ``warnings`` is a mutable list a running function can
+    append to via warn() -- fine even though the dataclass is frozen, since
+    only *assigning* a new value to a field is blocked, not mutating one
+    that's already there."""
 
     job_id: str
     scratch_dir: str
+    warnings: List[str] = field(default_factory=list)
+
+    def warn(self, message: str) -> None:
+        """Records a warning that travels back with this job's result."""
+        self.warnings.append(message)
 
 
 class FunctionRuntime(ABC):
@@ -49,3 +58,11 @@ class FunctionRuntime(ABC):
         self, function_ref: StorageKey, job_id: str, params: Dict[str, Any]
     ) -> Result[InvocationHandle, FunctionRuntimeError]:
         """Starts running a function and returns right away, before it finishes."""
+
+    @abstractmethod
+    def cancel(self, job_id: str) -> bool:
+        """Stops a specific job: kills the in-flight worker process or
+        dismisses the in-flight container, or drops it if it's still only
+        queued. Returns True if the job was found (and thus acted on),
+        False if it's unknown to this runtime (already finished, or never
+        ran here)."""

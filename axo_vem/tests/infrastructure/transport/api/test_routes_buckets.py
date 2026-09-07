@@ -66,6 +66,51 @@ def test_create_bucket_relays_rejection_as_409(client, collections):
     assert response.json()["detail"] == "bucket already exists"
 
 
+def test_create_bucket_records_the_creating_user_as_owner(client, collections, bucket_owner_repository):
+    address, thread, _ = _run_fake_endpoint(
+        [(True, "", {"name": "mybucket", "quota_bytes": 1024, "created_at": 100.0})],
+    )
+    collections.endpoints.insert_one({"_id": "127.0.0.1", "router_bind": address})
+
+    client.post("/endpoints/127.0.0.1/buckets", json={"name": "mybucket", "quota_bytes": 1024})
+    thread.join(timeout=2.0)
+
+    assert bucket_owner_repository.get_owner("mybucket") == "user-1"
+
+
+def test_create_bucket_rejection_does_not_record_ownership(client, collections, bucket_owner_repository):
+    address, thread, _ = _run_fake_endpoint([(False, "bucket already exists", None)])
+    collections.endpoints.insert_one({"_id": "127.0.0.1", "router_bind": address})
+
+    client.post("/endpoints/127.0.0.1/buckets", json={"name": "mybucket", "quota_bytes": 1024})
+    thread.join(timeout=2.0)
+
+    assert bucket_owner_repository.get_owner("mybucket") is None
+
+
+def test_list_buckets_mine_only_filters_to_owned_buckets(client, kurrent_appender, bucket_owner_repository):
+    for name in ("mine", "someone-elses"):
+        created = models.DataBucketCreated(endpoint_id="n0", name=name, quota_bytes=1024)
+        kurrent_appender.append_to_stream(f"buckets-{name}", models.DATA_BUCKET_CREATED, created.model_dump(mode="json"))
+    bucket_owner_repository.set_owner("mine", "user-1")
+    bucket_owner_repository.set_owner("someone-elses", "user-2")
+
+    unfiltered = client.get("/buckets").json()
+    assert {b["name"] for b in unfiltered} == {"mine", "someone-elses"}
+
+    mine = client.get("/buckets", params={"mine_only": "true"}).json()
+    assert {b["name"] for b in mine} == {"mine"}
+
+
+def test_list_buckets_includes_legacy_unowned_buckets_by_default(client, kurrent_appender):
+    created = models.DataBucketCreated(endpoint_id="n0", name="legacy", quota_bytes=1024)
+    kurrent_appender.append_to_stream("buckets-legacy", models.DATA_BUCKET_CREATED, created.model_dump(mode="json"))
+
+    response = client.get("/buckets").json()
+    assert response[0]["name"] == "legacy"
+    assert response[0]["owner_user_id"] is None
+
+
 def test_create_bucket_returns_404_for_unknown_endpoint(client):
     response = client.post("/endpoints/missing/buckets", json={"name": "mybucket", "quota_bytes": 1024})
     assert response.status_code == 404

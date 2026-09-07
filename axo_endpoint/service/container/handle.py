@@ -43,6 +43,10 @@ class ContainerHandle:
     max_duration_seconds: float = 0
     ready_event: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    # The job_id currently dispatched to this container, if any -- set right
+    # before dispatch, cleared once its result arrives. Lets cancel(job_id)
+    # find the right container to dismiss.
+    current_job_id: Optional[str] = None
 
 
 def sanitize_container_name(function_id: str, version: int, pool_index: int = 0) -> str:

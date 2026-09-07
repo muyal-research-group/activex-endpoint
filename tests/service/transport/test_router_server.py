@@ -44,6 +44,9 @@ class _ControllableRuntime(FunctionRuntime):
         self.invocations.append((function_ref, job_id, params))
         return Ok(InvocationHandle(job_id=job_id, function_id=function_ref.id))
 
+    def cancel(self, job_id):
+        return False
+
 
 def test_ping_round_trips_over_router_dealer(tmp_path, dealer):
     address = _bind_address(tmp_path)
@@ -219,7 +222,7 @@ def test_job_submit_returns_queued_then_pushes_completion_unsolicited(tmp_path, 
     assert pushed_result.ok is True
     assert pushed_result.metadata["pushed"] is True
     assert pushed_result.metadata["status"] == "COMPLETED"
-    assert pushed_result.metadata["values"] == {"value": 5}
+    assert pushed_result.metadata["output"] == {"value": 5, "type": "json"}
 
     server.stop()
     dispatcher.close()
@@ -275,7 +278,7 @@ def test_job_result_polling_still_works_when_push_target_is_unknown(tmp_path, de
     )
     assert result.ok is True
     assert result.metadata["status"] == "COMPLETED"
-    assert result.metadata["values"] == {"value": 5}
+    assert result.metadata["output"] == {"value": 5, "type": "json"}
 
     server.stop()
     dispatcher.close()
@@ -319,7 +322,10 @@ def test_polling_a_completed_result_prevents_a_later_duplicate_push(tmp_path, de
 
     # The result becomes available directly (simulating the runtime finishing)
     # *before* the JOB_COMPLETED event is emitted/processed.
-    results_store.put(StorageKey(id=job_id), FunctionResult(job_id=job_id, ok=True, values={"value": 5}))
+    results_store.put(
+        StorageKey(id=job_id),
+        FunctionResult(job_id=job_id, ok=True, output={"value": 5, "type": "json"}),
+    )
 
     polled = _send_command(
         dealer, Command(operation=wire.JOB_RESULT, content_type="application/json", envelope={"job_id": job_id})

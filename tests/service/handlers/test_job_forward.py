@@ -17,6 +17,9 @@ class _FakeRuntime(FunctionRuntime):
         self.invocations.append((function_ref, job_id, params))
         return Ok(InvocationHandle(job_id=job_id, function_id=function_ref.id))
 
+    def cancel(self, job_id):
+        return False
+
 
 def _registry():
     event_bus = InMemoryEventBus()

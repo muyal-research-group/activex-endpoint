@@ -48,3 +48,11 @@ class RuntimeDispatcher(FunctionRuntime):
         if spec and spec.type == "container":
             return self._container.invoke(function_ref, job_id, params)
         return self._process.invoke(function_ref, job_id, params)
+
+    def cancel(self, job_id: str) -> bool:
+        """job_id alone doesn't say which runtime a job landed on -- try
+        both. A job is only ever tracked by one of them, so at most one
+        call actually finds and cancels anything."""
+        process_cancelled = self._process.cancel(job_id)
+        container_cancelled = self._container.cancel(job_id)
+        return process_cancelled or container_cancelled

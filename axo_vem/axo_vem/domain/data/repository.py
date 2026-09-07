@@ -23,6 +23,27 @@ class BucketRepository(ABC):
     def save(self, bucket: DataBucket) -> None: ...
 
 
+class BucketOwnerRepository(ABC):
+    """A separate, non-event-sourced mapping from bucket name -> the user
+    who created it. Kept apart from DataBucket/BucketRepository deliberately:
+    bucket_handler.py's projector write is an unconditional overwrite save,
+    and ownership shouldn't ride along with (or be lost to) that. Written
+    synchronously by the BUCKET_REGISTER controller route, not via Kurrent --
+    a bucket created before this existed simply has no owner row, and stays
+    visible to everyone in the unfiltered listing rather than being hidden."""
+
+    @abstractmethod
+    def get_owner(self, name: str) -> Optional[str]: ...
+
+    @abstractmethod
+    def set_owner(self, name: str, owner_user_id: str) -> None: ...
+
+    @abstractmethod
+    def list_owned(self, owner_user_id: str) -> List[str]:
+        """Names of every bucket this user created."""
+        ...
+
+
 class DataItemRepository(ABC):
     """Write/read access for DataItem aggregates, keyed by name+version.
     Implemented by MongoDataItemRepository; applied by the projector after a

@@ -77,11 +77,12 @@ def test_dispatch_result_happy_path():
         sock.send_multipart([b"dispatch", b"job1", b"/tmp/scratch1", json.dumps({"a": 2, "b": 3}).encode()])
         frames = sock.recv_multipart()
         assert frames[0] == b"result"
-        assert len(frames) == 4
-        _, job_id_b, status_b, payload_b = frames
+        assert len(frames) == 5
+        _, job_id_b, status_b, payload_b, warnings_b = frames
         assert job_id_b == b"job1"
         assert status_b == b"ok"
         assert json.loads(payload_b.decode()) == 5
+        assert json.loads(warnings_b.decode()) == []
     finally:
         sock.close()
         server._shutdown.set()
@@ -141,7 +142,7 @@ def test_fn_dataio_read_triggers_io_request_and_resumes_on_reply():
 
         frames = sock.recv_multipart()
         assert frames[0] == b"result"
-        _, job_id_b, status_b, payload_b = frames
+        _, job_id_b, status_b, payload_b, warnings_b = frames
         assert status_b == b"ok"
         assert json.loads(payload_b.decode()) == "canned-bytes"
     finally:
@@ -170,7 +171,7 @@ def test_dataio_timeout_surfaces_as_job_failure_not_a_hang():
 
         frames = sock.recv_multipart()  # bounded by the socket's own 5s RCVTIMEO
         assert frames[0] == b"result"
-        _, job_id_b, status_b, payload_b = frames
+        _, job_id_b, status_b, payload_b, warnings_b = frames
         assert status_b == b"err"
         assert "no io reply within" in payload_b.decode()
     finally:

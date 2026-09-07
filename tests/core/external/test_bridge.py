@@ -424,7 +424,7 @@ def test_on_job_started_still_forwards_job_started_but_skips_function_activated_
 
 def test_on_job_finished_forwards_job_completed_and_function_deactivated():
     results = InMemoryStorageBackend()
-    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, values={"value": 42}))
+    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, output={"value": 42, "type": "json"}))
     bridge, publisher, _ = _bridge(results=results)
 
     bridge.on_job_finished(Event(
@@ -443,7 +443,7 @@ def test_on_job_finished_forwards_job_completed_and_function_deactivated():
 
 def test_on_job_finished_forwards_duration_ms_and_trusted_version():
     results = InMemoryStorageBackend()
-    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, values={"value": 42}))
+    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, output={"value": 42, "type": "json"}))
     bridge, publisher, registry = _bridge(results=results)
     registry.register(function_id="add", name="add", code=b"", now=200.0)  # newer version now registered
 
@@ -463,7 +463,7 @@ def test_on_job_finished_forwards_duration_ms_and_trusted_version():
 
 def test_on_job_finished_still_forwards_job_completed_but_skips_function_deactivated_when_version_unknown():
     results = InMemoryStorageBackend()
-    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, values={"value": 42}))
+    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, output={"value": 42, "type": "json"}))
     bridge, publisher, _ = _bridge(results=results)
 
     bridge.on_job_finished(Event(

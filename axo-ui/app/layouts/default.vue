@@ -80,6 +80,7 @@ const navItems = [
   { to: '/active-objects', icon: 'mdi-shape-outline', title: 'Active Objects' },
   { to: '/functions', icon: 'mdi-function-variant', title: 'Functions' },
   { to: '/buckets', icon: 'mdi-bucket-outline', title: 'Buckets' },
+  { to: '/choreographies', icon: 'mdi-sitemap-outline', title: 'Choreographies' },
 ]
 </script>
 

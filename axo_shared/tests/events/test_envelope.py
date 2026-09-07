@@ -1,3 +1,5 @@
+import pytest
+
 from axo_shared import wire
 from axo_shared.events import envelope, models
 
@@ -104,3 +106,15 @@ def test_event_publish_is_a_distinct_operation_constant():
     assert wire.EVENT_PUBLISH not in {
         wire.PING, wire.FUNCTION_REGISTER, wire.FUNCTION_DELETE, wire.JOB_SUBMIT, wire.JOB_RESULT, wire.METRICS,
     }
+
+
+def test_rehydrate_choreography_created_raises_key_error_pending_envelope_registration():
+    """Pins current behavior, not an endorsement of it: Choreography events
+    are appended straight to Kurrent by axo_vem's EventPublisher and never
+    traverse encode_event/decode_event/rehydrate in practice, so EVENT_TYPES
+    doesn't register them. If Choreography events are ever meant to also
+    cross the ZMQ envelope (e.g. endpoint -> axo_vem forwarding), EVENT_TYPES
+    needs an entry added -- this test exists to make that omission visible
+    and intentional-looking, not to silently assume it's fine forever."""
+    with pytest.raises(KeyError):
+        envelope.rehydrate(models.CHOREOGRAPHY_CREATED, {"choreography_id": "c1"})

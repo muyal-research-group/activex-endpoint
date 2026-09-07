@@ -19,6 +19,7 @@ from axo_shared.wire import (
     FUNCTION_DELETE,
     FUNCTION_REGISTER,
     FUNCTION_UPDATE,
+    JOB_CANCEL,
     JOB_RESULT,
     JOB_SUBMIT,
     PING,
@@ -288,6 +289,18 @@ class AxoEndpointClient:
     def get_job_result(self, job_id: str) -> CommandResult:
         return self._send(Command(
             operation=JOB_RESULT,
+            content_type="application/json",
+            envelope={"job_id": job_id},
+            payload=b"",
+        ))
+
+    def cancel_job(self, job_id: str) -> CommandResult:
+        """Asks whichever endpoint owns this job to stop it: kill the
+        in-flight worker process or dismiss the in-flight container, and
+        drop it if it's still only queued. Never leader-proxied -- only the
+        endpoint actually running the job can act on it."""
+        return self._send(Command(
+            operation=JOB_CANCEL,
             content_type="application/json",
             envelope={"job_id": job_id},
             payload=b"",

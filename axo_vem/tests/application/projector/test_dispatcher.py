@@ -14,6 +14,7 @@ from axo_vem.infrastructure.database.mongo.bucket_repository import (
     MongoBucketRepository,
     MongoDataItemRepository,
 )
+from axo_vem.infrastructure.database.mongo.choreography_repository import MongoChoreographyRepository
 from axo_vem.infrastructure.database.mongo.consensus_repository import MongoConsensusRepository
 from axo_vem.infrastructure.database.mongo.endpoint_repository import MongoEndpointRepository
 from axo_vem.infrastructure.database.mongo.function_repository import MongoFunctionRepository
@@ -36,6 +37,7 @@ def _handlers():
         job_repository=MongoJobRepository(db["jobs"]),
         bucket_repository=MongoBucketRepository(db["buckets"]),
         data_item_repository=MongoDataItemRepository(db["bucket_data"]),
+        choreography_repository=MongoChoreographyRepository(db["choreographies"]),
     )
     return handlers, db
 

@@ -10,9 +10,11 @@ def test_equality_and_defaults():
     a = FunctionResult(job_id="j1", ok=True)
     b = FunctionResult(job_id="j1", ok=True)
     assert a == b
-    assert a.values == {}
+    assert a.output == {}
     assert a.refs == {}
     assert a.error == ""
+    assert a.duration_ms is None
+    assert a.warnings == []
 
 
 def test_is_frozen():
@@ -24,9 +26,9 @@ def test_is_frozen():
 def test_default_values_and_refs_are_not_shared_between_instances():
     a = FunctionResult(job_id="a", ok=True)
     b = FunctionResult(job_id="b", ok=True)
-    a.values["x"] = 1
+    a.output["x"] = 1
     a.refs["blob"] = StorageKey(id="blob1")
-    assert b.values == {}
+    assert b.output == {}
     assert b.refs == {}
 
 
@@ -35,10 +37,10 @@ def test_round_trip_with_values_and_refs():
     result = FunctionResult(
         job_id="j1",
         ok=True,
-        values={"sum": 3, "label": "done"},
+        output={"value": {"sum": 3, "label": "done"}, "type": "json"},
         refs={"output_blob": ref},
     )
-    assert result.values["sum"] == 3
+    assert result.output["value"]["sum"] == 3
     assert result.refs["output_blob"] == ref
 
 
@@ -53,7 +55,7 @@ def test_round_trips_through_in_memory_storage_backend_keyed_by_job_id():
     # separate from the function registry's StorageBackend[FunctionRecord]
     # (different lifecycle: one-shot per job_id, no version/alias needed).
     results_store = InMemoryStorageBackend()
-    result = FunctionResult(job_id="j1", ok=True, values={"sum": 3})
+    result = FunctionResult(job_id="j1", ok=True, output={"value": {"sum": 3}, "type": "json"})
     key = StorageKey(id="j1")
 
     results_store.put(key, result)

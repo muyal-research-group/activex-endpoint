@@ -79,7 +79,7 @@ def test_register_submit_and_poll_result_end_to_end(tmp_path, clean_env, monkeyp
         final = _poll_until_terminal(dealer, job_id)
         assert final.ok is True
         assert final.metadata["status"] == "COMPLETED"
-        assert final.metadata["values"] == {"value": 5}
+        assert final.metadata["output"] == {"value": 5, "type": "json"}
     finally:
         dealer.close()
         app.stop()

@@ -22,9 +22,18 @@ from axo_vem.application.workspace.purge_virtual_environment import PurgeVirtual
 from axo_vem.application.workspace.update_virtual_environment import UpdateVirtualEnvironmentUseCase
 from axo_vem.infrastructure.database.mongo.activity_repository import MongoActivityRepository
 from axo_vem.infrastructure.database.mongo.bucket_repository import (
+    MongoBucketOwnerRepository,
     MongoBucketRepository,
     MongoDataItemRepository,
 )
+from axo_vem.infrastructure.database.mongo.choreography_repository import MongoChoreographyRepository
+from axo_vem.infrastructure.database.mongo.choreography_run_repository import MongoChoreographyRunRepository
+from axo_vem.application.choreography.cancel_choreography_run import CancelChoreographyRunUseCase
+from axo_vem.application.choreography.create_choreography import CreateChoreographyUseCase
+from axo_vem.application.choreography.delete_choreography import DeleteChoreographyUseCase
+from axo_vem.application.choreography.purge_choreography import PurgeChoreographyUseCase
+from axo_vem.application.choreography.run_choreography import RunChoreographyUseCase
+from axo_vem.application.choreography.update_choreography import UpdateChoreographyUseCase
 from axo_vem.infrastructure.database.mongo.collections import ReadCollections
 from axo_vem.infrastructure.database.mongo.consensus_repository import MongoConsensusRepository
 from axo_vem.infrastructure.database.mongo.endpoint_repository import MongoEndpointRepository
@@ -157,10 +166,25 @@ def data_item_repository(db):
 
 
 @pytest.fixture
+def bucket_owner_repository(db):
+    return MongoBucketOwnerRepository(db["bucket_owners"])
+
+
+@pytest.fixture
+def choreography_repository(db):
+    return MongoChoreographyRepository(db["choreographies"])
+
+
+@pytest.fixture
+def choreography_run_repository(db):
+    return MongoChoreographyRunRepository(db["choreography_runs"])
+
+
+@pytest.fixture
 def projector_handlers(
     activity_repository, user_profile_repository, virtual_environment_repository,
     endpoint_repository, function_repository, consensus_repository, job_repository,
-    bucket_repository, data_item_repository,
+    bucket_repository, data_item_repository, choreography_repository,
 ):
     return ProjectorHandlers(
         activity_recorder=activity_repository,
@@ -172,6 +196,7 @@ def projector_handlers(
         job_repository=job_repository,
         bucket_repository=bucket_repository,
         data_item_repository=data_item_repository,
+        choreography_repository=choreography_repository,
     )
 
 
@@ -256,9 +281,56 @@ def purge_endpoint_use_case(db, activity_repository, function_repository, job_re
 
 
 @pytest.fixture
+def create_choreography_use_case(kurrent_appender):
+    return CreateChoreographyUseCase(kurrent_appender)
+
+
+@pytest.fixture
+def update_choreography_use_case(choreography_repository, choreography_run_repository, kurrent_appender):
+    return UpdateChoreographyUseCase(choreography_repository, choreography_run_repository, kurrent_appender)
+
+
+@pytest.fixture
+def delete_choreography_use_case(choreography_repository, choreography_run_repository, kurrent_appender):
+    return DeleteChoreographyUseCase(choreography_repository, choreography_run_repository, kurrent_appender)
+
+
+@pytest.fixture
+def purge_choreography_use_case(db, activity_repository):
+    return PurgeChoreographyUseCase(db["choreographies"], db["choreography_runs"], activity_repository)
+
+
+@pytest.fixture
+def run_choreography_use_case(
+    choreography_repository, choreography_run_repository, function_repository, endpoint_repository,
+    data_item_repository, submit_function_job_use_case,
+):
+    return RunChoreographyUseCase(
+        choreography_repository=choreography_repository,
+        run_repository=choreography_run_repository,
+        function_repository=function_repository,
+        endpoint_repository=endpoint_repository,
+        data_item_repository=data_item_repository,
+        submit_function_job_use_case=submit_function_job_use_case,
+    )
+
+
+@pytest.fixture
+def cancel_choreography_run_use_case(choreography_repository, choreography_run_repository, run_choreography_use_case):
+    return CancelChoreographyRunUseCase(
+        choreography_repository=choreography_repository,
+        run_repository=choreography_run_repository,
+        run_use_case=run_choreography_use_case,
+    )
+
+
+@pytest.fixture
 def client(
     collections, activity_repository, user_profile_repository, virtual_environment_repository, job_repository,
-    bucket_repository, data_item_repository,
+    bucket_repository, data_item_repository, bucket_owner_repository,
+    choreography_repository, choreography_run_repository,
+    create_choreography_use_case, update_choreography_use_case, delete_choreography_use_case,
+    purge_choreography_use_case, run_choreography_use_case, cancel_choreography_run_use_case,
     signup_use_case, create_profile_use_case, update_profile_use_case, delete_profile_use_case,
     create_virtual_environment_use_case, update_virtual_environment_use_case, delete_virtual_environment_use_case,
     purge_virtual_environment_use_case,
@@ -274,6 +346,15 @@ def client(
         job_repository=job_repository,
         bucket_repository=bucket_repository,
         data_item_repository=data_item_repository,
+        bucket_owner_repository=bucket_owner_repository,
+        choreography_repository=choreography_repository,
+        choreography_run_repository=choreography_run_repository,
+        create_choreography_use_case=create_choreography_use_case,
+        update_choreography_use_case=update_choreography_use_case,
+        delete_choreography_use_case=delete_choreography_use_case,
+        purge_choreography_use_case=purge_choreography_use_case,
+        run_choreography_use_case=run_choreography_use_case,
+        cancel_choreography_run_use_case=cancel_choreography_run_use_case,
         signup_use_case=signup_use_case,
         create_profile_use_case=create_profile_use_case,
         update_profile_use_case=update_profile_use_case,

@@ -81,7 +81,7 @@ def _handle(function_id="fn1", version=1, pool_index=0):
 def _runtime(tmp_path, summoner, max_retries=3):
     completions = []
 
-    def on_complete(inv_handle, result):
+    def on_complete(inv_handle, result, warnings=None):
         completions.append((inv_handle, result))
 
     runtime = ContainerFunctionRuntime(
@@ -199,7 +199,7 @@ def test_successful_completion_clears_the_attempts_counter(tmp_path):
             pass
 
         def recv_multipart(self):
-            return [b"result", b"job1", b"ok", b'"done"']
+            return [b"result", b"job1", b"ok", b'"done"', b"[]"]
 
     runtime._pump_one_job(_FakeSocket(), handle, inv_handle, "job1", "/scratch/job1", {})
 

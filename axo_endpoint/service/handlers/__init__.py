@@ -14,6 +14,7 @@ from axo_endpoint.service.handlers.data_status import DataStatusHandler
 from axo_endpoint.service.handlers.function_delete import FunctionDeleteHandler
 from axo_endpoint.service.handlers.function_register import FunctionRegisterHandler
 from axo_endpoint.service.handlers.function_update import FunctionUpdateHandler
+from axo_endpoint.service.handlers.job_cancel import JobCancelHandler
 from axo_endpoint.service.handlers.job_forward import JobForwardHandler
 from axo_endpoint.service.handlers.job_result import JobResultHandler
 from axo_endpoint.service.handlers.job_result_sync import (
@@ -53,6 +54,7 @@ __all__ = [
     "FunctionDeleteHandler",
     "FunctionRegisterHandler",
     "FunctionUpdateHandler",
+    "JobCancelHandler",
     "JobForwardHandler",
     "JobResultHandler",
     "JobResultReplicateHandler",

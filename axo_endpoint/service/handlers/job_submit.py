@@ -3,16 +3,18 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
+import cloudpickle
 from option import Result
 
+from axo_endpoint.core.data import DataRegistry
 from axo_endpoint.core.errors import InvocationError, MissingFieldError
 from axo_endpoint.core.events.bus import Event as BusEvent, EventBus
 from axo_endpoint.core.functions import FunctionRegistry
 from axo_endpoint.core.functions.params_validation import validate_and_fill_params
 from axo_shared.protocol import Command, CommandHandler, CommandResult
-from axo_endpoint.core.results import FunctionResult
+from axo_endpoint.core.results import FunctionResult, is_json_safe_value
 from axo_endpoint.core.runtime import FunctionRuntime, FunctionRuntimeError, InvocationHandle
 from axo_endpoint.core.storage.backend import StorageBackend, StorageKey
 from axo_endpoint.log import DumbLogger, Log
@@ -27,25 +29,58 @@ _Logger = Union[Log, DumbLogger]
 def build_completion_recorder(
     results: StorageBackend,
     event_bus: EventBus,
+    data_registry: Optional[DataRegistry] = None,
     now_fn: Callable[[], float] = time.time,
     logger: _Logger = None,
     replicate_fn: "Optional[Callable[[FunctionResult], None]]" = None,
-) -> Callable[[InvocationHandle, "Result[Any, FunctionRuntimeError]"], None]:
+) -> Callable[[InvocationHandle, "Result[Any, FunctionRuntimeError]", Optional[List[str]]], None]:
     """Creates a function that saves a job's final result and announces that
     it finished. ``replicate_fn``, if given, is called once after the local
     store/event -- this is the single point every job's completion passes
     through exactly once, regardless of which runtime executed it, so it's
     also the single point cluster-wide result replication hooks in from.
-    Left unset (the default), behavior is identical to before this existed."""
+    Left unset (the default), behavior is identical to before this existed.
+
+    On success, the raw return value is auto-detected: JSON-safe values
+    (see is_json_safe_value) go straight into ``output``; anything else
+    (bytes, a DataFrame, a custom object -- already raw bytes if it came
+    back from a container runtime's own JSON-encode-or-cloudpickle
+    fallback, otherwise cloudpickled here) is registered via
+    ``data_registry`` and referenced through ``refs`` instead. Function
+    authors never write this envelope themselves."""
 
     _logger: _Logger = logger or DumbLogger()
 
-    def on_complete(handle: InvocationHandle, outcome: "Result[Any, FunctionRuntimeError]") -> None:
+    def on_complete(
+        handle: InvocationHandle,
+        outcome: "Result[Any, FunctionRuntimeError]",
+        warnings: Optional[List[str]] = None,
+    ) -> None:
         """Saves the job's result and emits a JOB_COMPLETED or JOB_FAILED event."""
         now = now_fn()
         duration_ms = round((now - handle.started_at) * 1000, 2) if handle.started_at is not None else None
+        warnings = warnings or []
         if outcome.is_ok:
-            result = FunctionResult(job_id=handle.job_id, ok=True, values={"value": outcome.unwrap()})
+            raw = outcome.unwrap()
+            output: Dict[str, Any]
+            refs: Dict[str, StorageKey] = {}
+            if is_json_safe_value(raw):
+                output = {"value": raw, "type": "json"}
+            else:
+                output = {"type": "bytes"}
+                if data_registry is not None:
+                    blob = raw if isinstance(raw, (bytes, bytearray)) else cloudpickle.dumps(raw)
+                    store_result = data_registry.register_and_store(
+                        name=f"job-result-{handle.job_id}", version=1,
+                        format="pickle", kind="fs", data=bytes(blob), now=now,
+                    )
+                    if store_result.is_ok:
+                        record = store_result.unwrap()
+                        refs = {"value": StorageKey(id=record.name, version=record.version)}
+            result = FunctionResult(
+                job_id=handle.job_id, ok=True, output=output, refs=refs,
+                duration_ms=duration_ms, warnings=warnings,
+            )
             event_type = "JOB_COMPLETED"
             _logger.info_event(
                 Event.Job.COMPLETED,
@@ -56,7 +91,10 @@ def build_completion_recorder(
             )
         else:
             err_msg = str(outcome.unwrap_err())
-            result = FunctionResult(job_id=handle.job_id, ok=False, error=err_msg)
+            result = FunctionResult(
+                job_id=handle.job_id, ok=False, error=err_msg,
+                duration_ms=duration_ms, warnings=warnings,
+            )
             event_type = "JOB_FAILED"
             _logger.info_event(
                 Event.Job.FAILED,

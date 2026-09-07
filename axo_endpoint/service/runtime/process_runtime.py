@@ -20,7 +20,7 @@ from axo_shared.activity.models import (
 from axo_endpoint.core.data import DataRegistry
 from axo_endpoint.core.dataio import resolve_io_request
 from axo_endpoint.core.storage.backend import StorageBackend
-from axo_endpoint.core.errors import FunctionNotFoundError, JobTimeoutError, WorkerCrashedError
+from axo_endpoint.core.errors import FunctionNotFoundError, JobCancelledError, JobTimeoutError, WorkerCrashedError
 from axo_endpoint.core.events.bus import Event as BusEvent, EventBus
 from axo_endpoint.core.functions import FunctionRegistry
 from axo_endpoint.core.runtime import FunctionRuntime, FunctionRuntimeError, InvocationHandle
@@ -32,7 +32,7 @@ from axo_endpoint.service.runtime.worker_entry import worker_main
 
 _Logger = Union[Log, DumbLogger]
 
-OnComplete = Callable[[InvocationHandle, "Result[Any, FunctionRuntimeError]"], None]
+OnComplete = Callable[[InvocationHandle, "Result[Any, FunctionRuntimeError]", Optional[List[str]]], None]
 
 # How often _pump polls the worker pipe rather than blocking indefinitely on
 # recv() -- short enough that a job's own max_duration_seconds deadline (if
@@ -62,10 +62,20 @@ class WorkerHandle:
         self.invocation_count: int = 0
         # True while this worker is currently running a function call.
         self.busy: bool = False
+        # The job_id currently dispatched to this worker, if any -- set right
+        # before dispatch, cleared once a result (or crash/timeout) is
+        # handled. Lets cancel(job_id) find the right worker to kill.
+        self.current_job_id: Optional[str] = None
         # Stashed from RuntimeSpec.max_duration_seconds at spawn time (a
         # per-(function, version) constant). 0 = unlimited, same convention
         # as the spec.
         self.max_duration_seconds = max_duration_seconds
+        # Set by cancel() right before it SIGKILLs an in-flight worker, so
+        # the pump thread's own crash/timeout detection -- woken by that
+        # exact same kill, racing with cancel()'s direct on_complete call --
+        # knows this handle's jobs were already finalized as JOB_CANCELLED
+        # and must not report them a second time as a crash.
+        self.cancelled: bool = False
 
     def touch(self, now: float) -> None:
         """Records that this worker was just used."""
@@ -148,6 +158,13 @@ class WorkerRegistry:
     def list_handles(self) -> List[WorkerHandle]:
         """Lists all worker handles currently tracked, across every pool."""
         return [handle for pool in self._workers.values() for handle in pool]
+
+    def find_by_job_id(self, job_id: str) -> Optional[WorkerHandle]:
+        """The worker currently dispatched to run this job, if any -- used by cancel()."""
+        for handle in self.list_handles():
+            if handle.current_job_id == job_id:
+                return handle
+        return None
 
     def sweep_idle(self, ttl_seconds: float, now: float) -> List[str]:
         """Removes workers that have been unused for too long, and returns their function ids."""
@@ -376,6 +393,7 @@ class ProcessFunctionRuntime(FunctionRuntime):
             job_id, params = item
 
             handle.busy = True
+            handle.current_job_id = job_id
             scratch_dir = allocate_scratch_dir(self._scratch_root, job_id)
             t_start = None
             try:
@@ -402,6 +420,7 @@ class ProcessFunctionRuntime(FunctionRuntime):
                     else None
                 )
                 status = payload = None
+                result_warnings: List[str] = []
                 while True:
                     # poll() (rather than a blocking recv()) so a configured
                     # max_duration_seconds deadline gets checked regularly
@@ -422,7 +441,7 @@ class ProcessFunctionRuntime(FunctionRuntime):
 
                     kind = message[0]
                     if kind == "result":
-                        _, status, payload = message
+                        _, status, payload, result_warnings = message
                         break
                     elif kind == "io_request":
                         _, request_id, op, ref, io_data = message
@@ -448,17 +467,101 @@ class ProcessFunctionRuntime(FunctionRuntime):
                     job_id=job_id, function_id=handle.function_id, version=handle.version, started_at=t_start,
                 )
                 if status == "ok":
-                    self._on_complete(invocation_handle, Ok(payload))
+                    self._on_complete(invocation_handle, Ok(payload), result_warnings)
                 else:
-                    self._on_complete(invocation_handle, Err(FunctionRuntimeError(payload)))
+                    self._on_complete(invocation_handle, Err(FunctionRuntimeError(payload)), result_warnings)
             finally:
                 cleanup_scratch_dir(scratch_dir)
                 handle.busy = False
+                handle.current_job_id = None
 
         try:
             handle.conn.close()
         except OSError:
             pass
+
+    def cancel(self, job_id: str) -> bool:
+        """Stops job_id: kills its worker (SIGKILL, same as _handle_timeout)
+        if it's currently dispatched, or drops it in place from whichever
+        worker's queue it's still waiting behind. Unlike a crash/timeout,
+        this outcome is deliberate -- JobCancelledError, never retried."""
+        handle = self._workers.find_by_job_id(job_id)
+        if handle is not None:
+            self._workers.evict(handle)
+            pending_jobs: List[str] = []
+            while True:
+                try:
+                    pending_job_id, _params = handle.request_queue.get_nowait()
+                except queue.Empty:
+                    break
+                pending_jobs.append(pending_job_id)
+
+            # Must be set before the kill below -- _terminate_process()
+            # breaks the pump thread's blocked recv(), which otherwise races
+            # this method to report the same in-flight job a second time via
+            # _handle_crash.
+            handle.cancelled = True
+            self._terminate_process(handle)
+            self._logger.info_event(
+                Event.Runtime.WORKER_CANCELLED,
+                component=Component.RUNTIME,
+                function_id=handle.function_id,
+                job_id=job_id,
+            )
+            if self._event_bus is not None:
+                self._event_bus.emit(BusEvent(
+                    event_type=FUNCTION_CRASHED_EVENT,
+                    payload={"function_id": handle.function_id, "version": handle.version, "reason": "cancelled"},
+                    timestamp=time.time(),
+                ))
+            invocation_handle = InvocationHandle(job_id=job_id, function_id=handle.function_id, version=handle.version)
+            self._on_complete(invocation_handle, Err(JobCancelledError(
+                "job was cancelled", context={"function_id": handle.function_id, "job_id": job_id},
+            )))
+            for pending_job_id in pending_jobs:
+                pending_handle = InvocationHandle(
+                    job_id=pending_job_id, function_id=handle.function_id, version=handle.version,
+                )
+                self._on_complete(pending_handle, Err(WorkerCrashedError(
+                    "worker recycled to cancel a sibling job",
+                    context={"function_id": handle.function_id, "job_id": pending_job_id},
+                )))
+            return True
+
+        # Not currently dispatched to any worker -- it may still be queued
+        # behind one. Drain and rebuild each worker's queue in place, minus
+        # job_id, rather than touching the worker itself.
+        for candidate in self._workers.list_handles():
+            remaining: List[Tuple[str, Dict[str, Any]]] = []
+            found = False
+            while True:
+                try:
+                    queued_job_id, queued_params = candidate.request_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if queued_job_id == job_id:
+                    found = True
+                else:
+                    remaining.append((queued_job_id, queued_params))
+            for item in remaining:
+                candidate.request_queue.put(item)
+            if found:
+                self._logger.info_event(
+                    Event.Runtime.WORKER_CANCELLED,
+                    component=Component.RUNTIME,
+                    function_id=candidate.function_id,
+                    job_id=job_id,
+                    status="queued",
+                )
+                invocation_handle = InvocationHandle(
+                    job_id=job_id, function_id=candidate.function_id, version=candidate.version,
+                )
+                self._on_complete(invocation_handle, Err(JobCancelledError(
+                    "job was cancelled before it started",
+                    context={"function_id": candidate.function_id, "job_id": job_id},
+                )))
+                return True
+        return False
 
     def _handle_crash(
         self, handle: WorkerHandle, in_flight_job_id: str, in_flight_started_at: Optional[float] = None,
@@ -466,6 +569,11 @@ class ProcessFunctionRuntime(FunctionRuntime):
         """Marks a worker's jobs as failed and removes it after the worker process dies unexpectedly.
         Only the in-flight job (if any) has a real started_at -- jobs still
         sitting in the queue were never dispatched, so they get None."""
+        if handle.cancelled:
+            # cancel() already finalized (and SIGKILLed) this handle itself --
+            # the process dying is expected, not a real crash, and cancel()
+            # already reported every job that was on this handle.
+            return
         self._workers.evict(handle)
 
         failed_jobs = [(in_flight_job_id, in_flight_started_at)]
@@ -508,6 +616,10 @@ class ProcessFunctionRuntime(FunctionRuntime):
         JobTimeoutError -- any others still queued behind it are casualties
         of the recycle, not timeouts themselves, so they're failed as
         WorkerCrashedError (mirrors _handle_crash's own draining loop)."""
+        if handle.cancelled:
+            # Same race as _handle_crash: cancel() already finalized and
+            # killed this handle out from under the polling loop.
+            return
         self._workers.evict(handle)
 
         pending_jobs = []

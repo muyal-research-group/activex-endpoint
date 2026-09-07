@@ -90,4 +90,24 @@ def build_router(broadcaster: Broadcaster) -> APIRouter:
         finally:
             broadcaster.unregister(topic, websocket)
 
+    @router.websocket("/ws/choreographies/{run_id}")
+    async def ws_choreography_run(websocket: WebSocket, run_id: str) -> None:
+        """Live per-node/per-edge status for one choreography run --
+        node_status/run_status messages pushed directly by
+        RunChoreographyUseCase's own orchestrator thread (same
+        direct-poller-pushes-to-Broadcaster shape EndpointStatsPoller uses
+        for live Docker stats), not event-sourced. Scoped by run id, not
+        choreography id, since run history means several runs can exist
+        per choreography."""
+        topic = f"choreographies:{run_id}"
+        await websocket.accept()
+        broadcaster.register(topic, websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            broadcaster.unregister(topic, websocket)
+
     return router

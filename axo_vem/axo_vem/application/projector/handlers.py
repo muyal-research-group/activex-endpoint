@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from axo_vem.domain.choreography.repository import ChoreographyRepository
 from axo_vem.domain.compute.consensus_recorder import ConsensusRecorder
 from axo_vem.domain.compute.repository import EndpointRepository, FunctionRepository
 from axo_vem.domain.data.repository import BucketRepository, DataItemRepository
@@ -28,3 +29,4 @@ class ProjectorHandlers:
     job_repository: JobRepository
     bucket_repository: BucketRepository
     data_item_repository: DataItemRepository
+    choreography_repository: ChoreographyRepository

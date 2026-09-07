@@ -38,8 +38,11 @@ class FakeContainer:
         self.received_dispatch = frames
         return identity
 
-    def send_result(self, identity, job_id, status, payload):
-        self._sock.send_multipart([identity, b"result", job_id.encode(), status.encode(), payload])
+    def send_result(self, identity, job_id, status, payload, warnings=None):
+        self._sock.send_multipart([
+            identity, b"result", job_id.encode(), status.encode(), payload,
+            json.dumps(warnings or []).encode(),
+        ])
 
     def send_io_request(self, identity, request_id, op, ref: dict, data=b""):
         self._sock.send_multipart([
@@ -73,7 +76,7 @@ class _NoOpSummoner:
 def _make_runtime(tmp_path, data_registry=None, storage_backends=None):
     completions = []
 
-    def on_complete(handle, result):
+    def on_complete(handle, result, warnings=None):
         completions.append((handle, result))
 
     runtime = ContainerFunctionRuntime(
@@ -171,7 +174,7 @@ class _FakeConfig:
 def _make_runtime_for_invoke(tmp_path, handle, readiness_timeout=2.0):
     completions = []
 
-    def on_complete(inv_handle, result):
+    def on_complete(inv_handle, result, warnings=None):
         completions.append((inv_handle, result))
 
     runtime = ContainerFunctionRuntime(
@@ -290,7 +293,7 @@ def test_invoke_dispatches_concurrent_jobs_to_distinct_pool_members(tmp_path):
 
     completions = []
 
-    def on_complete(inv_handle, result):
+    def on_complete(inv_handle, result, warnings=None):
         completions.append((inv_handle, result))
 
     runtime = ContainerFunctionRuntime(

@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class JobEntry:
     job_id: str
     status: str           # "PENDING" | "COMPLETED" | "FAILED"
-    values: Dict[str, Any] = field(default_factory=dict)
+    # output mirrors axo_endpoint.core.results.envelope.FunctionResult.output:
+    # {"value": ..., "type": "json"} for a JSON-safe return, {"type": "bytes"}
+    # when the return had to be cloudpickled instead (see server.py).
+    output: Dict[str, Any] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
     error: str = ""
 
 
@@ -24,11 +28,19 @@ class JobStore:
         with self._lock:
             self._store[job_id] = JobEntry(job_id=job_id, status="PENDING")
 
-    def set_result(self, job_id: str, ok: bool, value: Any = None, error: str = "") -> None:
+    def set_result(
+        self,
+        job_id: str,
+        ok: bool,
+        output: Optional[Dict[str, Any]] = None,
+        warnings: Optional[List[str]] = None,
+        error: str = "",
+    ) -> None:
         with self._lock:
             entry = self._store.get(job_id) or JobEntry(job_id=job_id, status="PENDING")
             entry.status = "COMPLETED" if ok else "FAILED"
-            entry.values = {"value": value} if ok else {}
+            entry.output = output or {}
+            entry.warnings = warnings or []
             entry.error = error
             self._store[job_id] = entry
 

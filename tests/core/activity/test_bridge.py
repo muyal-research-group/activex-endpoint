@@ -41,7 +41,7 @@ def test_on_job_submitted_records_activity():
 
 def test_on_job_finished_fetches_full_result_from_results_store():
     results = InMemoryStorageBackend()
-    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, values={"value": 42}))
+    results.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, output={"value": 42, "type": "json"}))
     repo = _FakeRepository()
     bridge = ActivityTrackingBridge(repository=repo, results=results)
 

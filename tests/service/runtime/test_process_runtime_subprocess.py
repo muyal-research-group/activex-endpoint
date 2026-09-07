@@ -108,7 +108,7 @@ def _make_runtime(registry, scratch_root, **kwargs):
     completions = []
     lock = threading.Lock()
 
-    def on_complete(handle, result):
+    def on_complete(handle, result, warnings=None):
         with lock:
             completions.append((handle, result))
 

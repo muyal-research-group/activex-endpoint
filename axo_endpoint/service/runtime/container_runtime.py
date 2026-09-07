@@ -17,7 +17,13 @@ from axo_shared.runtime.spec import RuntimeSpec
 from axo_endpoint.config import Config
 from axo_endpoint.core.data import DataRegistry
 from axo_endpoint.core.dataio import IORef, resolve_io_request
-from axo_endpoint.core.errors import ContainerCrashError, ContainerError, InvocationError, JobTimeoutError
+from axo_endpoint.core.errors import (
+    ContainerCrashError,
+    ContainerError,
+    InvocationError,
+    JobCancelledError,
+    JobTimeoutError,
+)
 from axo_endpoint.core.events.bus import Event as BusEvent, EventBus
 from axo_endpoint.core.functions import FunctionRegistry
 from axo_endpoint.core.runtime.base import FunctionRuntime, FunctionRuntimeError, InvocationHandle
@@ -29,7 +35,7 @@ from axo_endpoint.service.container.spawner import ContainerSummoner
 from axo_endpoint.service.runtime.concurrency_client import ConcurrencyClient
 
 _Logger = Union[Log, DumbLogger]
-OnComplete = Callable[[InvocationHandle, Result[Any, FunctionRuntimeError]], None]
+OnComplete = Callable[[InvocationHandle, Result[Any, FunctionRuntimeError], Optional[List[str]]], None]
 # target_endpoint_id, function_ref, job_id, params -> Ok(None) once forwarded
 ForwardJobFn = Callable[[str, StorageKey, str, Dict[str, Any]], Result[None, AxoError]]
 OnForwarded = Callable[[str, str], None]  # job_id, target_endpoint_id
@@ -335,6 +341,83 @@ class ContainerFunctionRuntime(FunctionRuntime):
     def sweep_max_invocations(self, max_invocations: int) -> List[str]:
         return self._summoner.sweep_max_invocations(max_invocations)
 
+    def cancel(self, job_id: str) -> bool:
+        """Stops job_id: dismisses its container (same teardown _handle_crash
+        uses) if it's currently in flight, or drops it in place from
+        whichever container's queue it's still waiting behind. Bypasses
+        _retry_or_finalize entirely -- a deliberate cancel must never
+        trigger a retry, unlike a real crash/timeout."""
+        for handle in self._summoner.list_handles():
+            if handle.current_job_id == job_id:
+                with handle._lock:
+                    handle.status = ContainerStatus.CRASHED
+                self._logger.info_event(
+                    Event.Container.JOB_CANCELLED,
+                    component=Component.CONTAINER_RUNTIME,
+                    function_id=handle.function_id,
+                    service_name=handle.service_name,
+                    job_id=job_id,
+                )
+                self._summoner.dismiss(handle, reason="cancelled")
+                if self._concurrency_client is not None:
+                    self._concurrency_client.release(handle.function_id, handle.version, handle.pool_index)
+                with self._attempts_lock:
+                    self._attempts.pop(job_id, None)
+                invocation_handle = InvocationHandle(
+                    job_id=job_id, function_id=handle.function_id, version=handle.version,
+                )
+                self._on_complete(invocation_handle, Err(JobCancelledError(
+                    "job was cancelled", context={"function_id": handle.function_id, "job_id": job_id},
+                )), [])
+                # Anything else queued behind this container is a casualty of
+                # the dismissal, not itself cancelled -- same convention
+                # _handle_crash/_handle_timeout use for their own drains.
+                crash_err = ContainerCrashError(
+                    "container dismissed to cancel a sibling job",
+                    context={"function_id": handle.function_id},
+                )
+                for queued_job_id, _scratch_dir, _queued_params in self._drain_job_queue(handle):
+                    queued_handle = InvocationHandle(
+                        job_id=queued_job_id, function_id=handle.function_id, version=handle.version,
+                    )
+                    self._on_complete(queued_handle, Err(crash_err), [])
+                return True
+
+            job_queue = getattr(handle, "_job_queue", None)
+            if job_queue is None:
+                continue
+            remaining: List[tuple] = []
+            found = False
+            while True:
+                try:
+                    item = job_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if item[0] == job_id:
+                    found = True
+                else:
+                    remaining.append(item)
+            for item in remaining:
+                job_queue.put(item)
+            if found:
+                self._logger.info_event(
+                    Event.Container.JOB_CANCELLED,
+                    component=Component.CONTAINER_RUNTIME,
+                    function_id=handle.function_id,
+                    service_name=handle.service_name,
+                    job_id=job_id,
+                    status="queued",
+                )
+                invocation_handle = InvocationHandle(
+                    job_id=job_id, function_id=handle.function_id, version=handle.version,
+                )
+                self._on_complete(invocation_handle, Err(JobCancelledError(
+                    "job was cancelled before it started",
+                    context={"function_id": handle.function_id, "job_id": job_id},
+                )), [])
+                return True
+        return False
+
     # ── pump ───────────────────────────────────────────────────────────────────
 
     def _ensure_pump(self, handle: ContainerHandle) -> None:
@@ -443,6 +526,7 @@ class ContainerFunctionRuntime(FunctionRuntime):
         if disconnected is None:
             disconnected = threading.Event()
 
+        handle.current_job_id = job_id
         try:
             sock.send_multipart([b"dispatch", job_id.encode(), scratch_dir.encode(), json.dumps(params).encode()])
         except zmq.ZMQError as exc:
@@ -497,22 +581,27 @@ class ContainerFunctionRuntime(FunctionRuntime):
             tag = frames[0]
 
             if tag == b"result":
-                if len(frames) != 4:
+                if len(frames) != 5:
                     self._handle_crash(handle, inv_handle, "unexpected frame count for result", params)
                     return False
-                _, _job_id_b, status_b, payload_b = frames
+                _, _job_id_b, status_b, payload_b, warnings_b = frames
                 status = status_b.decode("utf-8")
+                try:
+                    result_warnings = json.loads(warnings_b.decode("utf-8"))
+                except Exception:
+                    result_warnings = []
                 with self._attempts_lock:
                     self._attempts.pop(job_id, None)
+                handle.current_job_id = None
                 if status == "ok":
                     try:
                         value = json.loads(payload_b.decode("utf-8"))
                     except Exception:
                         value = payload_b
-                    self._on_complete(inv_handle, Ok(value))
+                    self._on_complete(inv_handle, Ok(value), result_warnings)
                 else:
                     error_msg = payload_b.decode("utf-8", errors="replace")
-                    self._on_complete(inv_handle, Err(FunctionRuntimeError(error_msg)))
+                    self._on_complete(inv_handle, Err(FunctionRuntimeError(error_msg)), result_warnings)
                 return True
 
             elif tag == b"io_request":
@@ -547,6 +636,14 @@ class ContainerFunctionRuntime(FunctionRuntime):
         self, handle: ContainerHandle, inv_handle: InvocationHandle, reason: str,
         params: Optional[Dict[str, Any]] = None,
     ) -> None:
+        if handle.status in (ContainerStatus.CRASHED, ContainerStatus.DISMISSED):
+            # cancel() already finalized (and dismissed) this handle -- the
+            # pump thread's blocked recv() waking up to a broken connection
+            # here is an expected side effect of that dismissal, not a fresh
+            # crash. Without this guard, _retry_or_finalize below would see
+            # cancel()'s already-cleared _attempts entry as "never tried"
+            # and silently re-invoke a job the caller explicitly cancelled.
+            return
         with handle._lock:
             handle.status = ContainerStatus.CRASHED
         err = ContainerCrashError(reason, context={"function_id": handle.function_id})
@@ -586,6 +683,10 @@ class ContainerFunctionRuntime(FunctionRuntime):
         deadline may have left it in a stuck state -- dismissed immediately
         below rather than left for the next summon()'s _dismiss_stale() or
         a periodic sweep, so its name is free again right away."""
+        if handle.status in (ContainerStatus.CRASHED, ContainerStatus.DISMISSED):
+            # Same race as _handle_crash: cancel() already finalized this
+            # handle out from under the pump thread's wait.
+            return
         with handle._lock:
             handle.status = ContainerStatus.CRASHED
         err = JobTimeoutError(

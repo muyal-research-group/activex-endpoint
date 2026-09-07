@@ -9,6 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from xolo.client import XoloClient
 from xolo.client.models import UserDTO
 
+from axo_vem.application.choreography.cancel_choreography_run import CancelChoreographyRunUseCase
+from axo_vem.application.choreography.create_choreography import CreateChoreographyUseCase
+from axo_vem.application.choreography.delete_choreography import DeleteChoreographyUseCase
+from axo_vem.application.choreography.purge_choreography import PurgeChoreographyUseCase
+from axo_vem.application.choreography.run_choreography import RunChoreographyUseCase
+from axo_vem.application.choreography.update_choreography import UpdateChoreographyUseCase
 from axo_vem.application.compute.delete_function import DeleteFunctionUseCase
 from axo_vem.application.compute.purge_function_version import PurgeFunctionVersionUseCase
 from axo_vem.application.compute.register_function import RegisterFunctionUseCase
@@ -26,7 +32,9 @@ from axo_vem.application.workspace.create_virtual_environment import CreateVirtu
 from axo_vem.application.workspace.delete_virtual_environment import DeleteVirtualEnvironmentUseCase
 from axo_vem.application.workspace.purge_virtual_environment import PurgeVirtualEnvironmentUseCase
 from axo_vem.application.workspace.update_virtual_environment import UpdateVirtualEnvironmentUseCase
-from axo_vem.domain.data.repository import BucketRepository, DataItemRepository
+from axo_vem.domain.choreography.repository import ChoreographyRepository
+from axo_vem.domain.choreography.run_repository import ChoreographyRunRepository
+from axo_vem.domain.data.repository import BucketOwnerRepository, BucketRepository, DataItemRepository
 from axo_vem.domain.events.stream_admin import StreamAdmin
 from axo_vem.domain.execution.repository import JobRepository
 from axo_vem.domain.identity.repository import UserProfileRepository
@@ -35,6 +43,7 @@ from axo_vem.infrastructure.database.kurrent.reader import KurrentReader
 from axo_vem.infrastructure.database.mongo.activity_repository import MongoActivityRepository
 from axo_vem.infrastructure.database.mongo.collections import ReadCollections
 from axo_vem.infrastructure.transport.api.controllers import buckets as buckets_routes
+from axo_vem.infrastructure.transport.api.controllers import choreographies as choreographies_routes
 from axo_vem.infrastructure.transport.api.controllers import consensus as consensus_routes
 from axo_vem.infrastructure.transport.api.controllers import endpoints as endpoints_routes
 from axo_vem.infrastructure.transport.api.controllers import events as events_routes
@@ -96,6 +105,15 @@ def create_app(
     job_repository: Optional[JobRepository] = None,
     bucket_repository: Optional[BucketRepository] = None,
     data_item_repository: Optional[DataItemRepository] = None,
+    bucket_owner_repository: Optional[BucketOwnerRepository] = None,
+    choreography_repository: Optional[ChoreographyRepository] = None,
+    choreography_run_repository: Optional[ChoreographyRunRepository] = None,
+    create_choreography_use_case: Optional[CreateChoreographyUseCase] = None,
+    update_choreography_use_case: Optional[UpdateChoreographyUseCase] = None,
+    delete_choreography_use_case: Optional[DeleteChoreographyUseCase] = None,
+    purge_choreography_use_case: Optional[PurgeChoreographyUseCase] = None,
+    run_choreography_use_case: Optional[RunChoreographyUseCase] = None,
+    cancel_choreography_run_use_case: Optional[CancelChoreographyRunUseCase] = None,
     signup_use_case: Optional[SignupUseCase] = None,
     create_profile_use_case: Optional[CreateProfileUseCase] = None,
     update_profile_use_case: Optional[UpdateProfileUseCase] = None,
@@ -201,9 +219,10 @@ def create_app(
             job_repository, required_auth_dependency, collections.endpoints, endpoint_command_timeout_seconds,
             submit_function_job_use_case,
         ))
-    if bucket_repository is not None and data_item_repository is not None:
+    if bucket_repository is not None and data_item_repository is not None and bucket_owner_repository is not None:
         app.include_router(buckets_routes.build_router(
-            bucket_repository, data_item_repository, collections.endpoints, collections.consensus,
+            bucket_repository, data_item_repository, bucket_owner_repository,
+            collections.endpoints, collections.consensus,
             required_auth_dependency, endpoint_command_timeout_seconds,
         ))
     if (
@@ -234,6 +253,22 @@ def create_app(
             update_virtual_environment_use_case, delete_virtual_environment_use_case,
             purge_virtual_environment_use_case,
             current_user_dependency,
+        ))
+    if (
+        choreography_repository is not None
+        and choreography_run_repository is not None
+        and create_choreography_use_case is not None
+        and update_choreography_use_case is not None
+        and delete_choreography_use_case is not None
+        and purge_choreography_use_case is not None
+        and current_user_dependency is not None
+    ):
+        app.include_router(choreographies_routes.build_router(
+            choreography_repository, choreography_run_repository, create_choreography_use_case,
+            update_choreography_use_case, delete_choreography_use_case, purge_choreography_use_case,
+            current_user_dependency,
+            run_use_case=run_choreography_use_case,
+            cancel_run_use_case=cancel_choreography_run_use_case,
         ))
 
     @app.get("/health")

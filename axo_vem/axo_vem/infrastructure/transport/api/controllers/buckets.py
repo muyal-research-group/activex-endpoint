@@ -12,7 +12,7 @@ from axo_shared import wire
 from axo_shared.client import DEFAULT_CHUNK_BYTES
 from axo_shared.protocol import Command
 
-from axo_vem.domain.data.repository import BucketRepository, DataItemRepository
+from axo_vem.domain.data.repository import BucketOwnerRepository, BucketRepository, DataItemRepository
 from axo_vem.infrastructure.transport.zmq_command.endpoint_client import resolve_rpc_uri, send_command
 
 
@@ -54,6 +54,7 @@ def _leader_rpc_uri(endpoints: Collection, consensus: Collection, fallback: str)
 def build_router(
     bucket_repository: BucketRepository,
     data_item_repository: DataItemRepository,
+    bucket_owner_repository: BucketOwnerRepository,
     endpoints: Collection,
     consensus: Collection,
     current_user_dependency: Callable[..., UserDTO],
@@ -65,8 +66,25 @@ def build_router(
         return sum(item.total_size for item in data_item_repository.list_by_bucket(bucket_name))
 
     @router.get("/buckets")
-    def list_buckets(_current_user: UserDTO = Depends(current_user_dependency)):
-        return [{**bucket.to_dict(), "used_bytes": _used_bytes(bucket.name)} for bucket in bucket_repository.list()]
+    def list_buckets(
+        mine_only: bool = False,
+        current_user: UserDTO = Depends(current_user_dependency),
+    ):
+        """Unfiltered by default -- buckets created before ownership existed
+        have no owner row and would otherwise vanish from every listing.
+        mine_only=true scopes to buckets this user actually created."""
+        buckets = bucket_repository.list()
+        if mine_only:
+            owned = set(bucket_owner_repository.list_owned(current_user.key))
+            buckets = [b for b in buckets if b.name in owned]
+        return [
+            {
+                **bucket.to_dict(),
+                "used_bytes": _used_bytes(bucket.name),
+                "owner_user_id": bucket_owner_repository.get_owner(bucket.name),
+            }
+            for bucket in buckets
+        ]
 
     @router.get("/buckets/{name}")
     def get_bucket(name: str, _current_user: UserDTO = Depends(current_user_dependency)):
@@ -77,6 +95,7 @@ def build_router(
         return {
             **bucket.to_dict(),
             "used_bytes": sum(item.total_size for item in items),
+            "owner_user_id": bucket_owner_repository.get_owner(name),
             "items": [item.to_dict() for item in items],
         }
 
@@ -84,11 +103,13 @@ def build_router(
     def create_bucket(
         endpoint_id: str,
         body: _BucketCreateRequest,
-        _current_user: UserDTO = Depends(current_user_dependency),
+        current_user: UserDTO = Depends(current_user_dependency),
     ):
         """Proxies BUCKET_REGISTER straight to the target endpoint's ROUTER
         (leader-proxied by the node itself if needed), mirroring
-        register_function/assign_virtual_environment's relay shape."""
+        register_function/assign_virtual_environment's relay shape. Ownership
+        is recorded here, directly, synchronously -- not via the node round
+        trip (see BucketOwnerRepository)."""
         rpc_uri = _endpoint_rpc_uri(endpoints, endpoint_id)
         command = Command(
             operation=wire.BUCKET_REGISTER,
@@ -101,6 +122,7 @@ def build_router(
         command_result = result.unwrap()
         if not command_result.ok:
             raise HTTPException(status_code=409, detail=command_result.error)
+        bucket_owner_repository.set_owner(body.name, current_user.key)
         return {"endpoint_id": endpoint_id, **(command_result.metadata or {})}
 
     @router.post("/endpoints/{endpoint_id}/buckets/{bucket}/data", tags=["endpoint management"])

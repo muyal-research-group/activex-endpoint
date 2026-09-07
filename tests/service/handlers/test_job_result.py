@@ -40,7 +40,10 @@ def test_missing_job_id_returns_error(results_store):
 
 
 def test_returns_completed_result(results_store):
-    results_store.put(StorageKey(id="job1"), FunctionResult(job_id="job1", ok=True, values={"value": 5}))
+    results_store.put(
+        StorageKey(id="job1"),
+        FunctionResult(job_id="job1", ok=True, output={"value": 5, "type": "json"}),
+    )
     handler = JobResultHandler(results=results_store)
 
     result = handler.handle(Command(operation="JOB_RESULT", content_type="application/json", envelope={"job_id": "job1"}))
@@ -48,7 +51,7 @@ def test_returns_completed_result(results_store):
     assert result.ok is True
     assert result.metadata["status"] == "COMPLETED"
     assert result.metadata["result_ok"] is True
-    assert result.metadata["values"] == {"value": 5}
+    assert result.metadata["output"] == {"value": 5, "type": "json"}
 
 
 def test_returns_failed_result(results_store):

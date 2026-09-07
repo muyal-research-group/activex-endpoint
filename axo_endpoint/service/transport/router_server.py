@@ -179,7 +179,10 @@ class RouterServer:
             metadata={
                 "job_id": job_id,
                 "status": "COMPLETED" if function_result.ok else "FAILED",
-                "values": function_result.values,
+                "output": function_result.output,
+                "refs": {k: v.to_str() for k, v in function_result.refs.items()},
+                "duration_ms": function_result.duration_ms,
+                "warnings": function_result.warnings,
                 "pushed": True,
             },
         )

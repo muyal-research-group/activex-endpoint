@@ -50,6 +50,9 @@ def test_event_type_constants_are_distinct():
         models.VIRTUAL_ENV_DELETED,
         models.ENDPOINT_VIRTUAL_ENV_ASSIGNED,
         models.ENDPOINT_VIRTUAL_ENV_DETACHED,
+        models.CHOREOGRAPHY_CREATED,
+        models.CHOREOGRAPHY_UPDATED,
+        models.CHOREOGRAPHY_DELETED,
     ]
     assert len(constants) == len(set(constants))
 
@@ -253,3 +256,70 @@ def test_endpoint_virtual_environment_detached_fields():
         endpoint_id="axo-endpoint-0", previous_virtual_environment_id="ve1",
     )
     assert event.previous_virtual_environment_id == "ve1"
+
+
+def _choreography_graph() -> models.ChoreographyGraph:
+    return models.ChoreographyGraph(
+        nodes=[
+            models.ChoreographyNode(
+                node_id="n1", kind="function", position={"x": 0.0, "y": 0.0},
+                function_id="add", function_version=1,
+            ),
+            models.ChoreographyNode(
+                node_id="n2", kind="bucket", position={"x": 100.0, "y": 0.0},
+                bucket_name="inputs",
+            ),
+        ],
+        edges=[
+            models.ChoreographyEdge(
+                edge_id="e1", source_node_id="n2", target_node_id="n1",
+                kind="bucket_to_fn", parallelism=2,
+            ),
+        ],
+    )
+
+
+def test_choreography_created_fields():
+    event = models.ChoreographyCreated(
+        choreography_id="c1", name="pipeline", owner_user_id="u1", graph=_choreography_graph(),
+    )
+    assert event.choreography_id == "c1"
+    assert event.owner_user_id == "u1"
+    assert len(event.graph.nodes) == 2
+    assert event.graph.edges[0].kind == "bucket_to_fn"
+
+
+def test_choreography_updated_fields():
+    event = models.ChoreographyUpdated(choreography_id="c1", name="pipeline-v2", graph=_choreography_graph())
+    assert event.name == "pipeline-v2"
+    assert event.graph.nodes[0].function_id == "add"
+
+
+def test_choreography_deleted_fields():
+    event = models.ChoreographyDeleted(choreography_id="c1")
+    assert event.choreography_id == "c1"
+
+
+def test_choreography_node_rejects_unknown_kind():
+    with pytest.raises(ValidationError):
+        models.ChoreographyNode(node_id="n1", kind="not_a_kind", position={"x": 0.0, "y": 0.0})
+
+
+def test_choreography_node_rejects_unknown_retry_policy():
+    with pytest.raises(ValidationError):
+        models.ChoreographyNode(
+            node_id="n1", kind="function", position={"x": 0.0, "y": 0.0}, retry_policy="not_a_policy",
+        )
+
+
+def test_choreography_edge_rejects_unknown_kind():
+    with pytest.raises(ValidationError):
+        models.ChoreographyEdge(
+            edge_id="e1", source_node_id="n1", target_node_id="n2", kind="not_a_kind",
+        )
+
+
+def test_choreography_node_is_frozen():
+    node = models.ChoreographyNode(node_id="n1", kind="function", position={"x": 0.0, "y": 0.0})
+    with pytest.raises(ValidationError):
+        node.node_id = "n2"

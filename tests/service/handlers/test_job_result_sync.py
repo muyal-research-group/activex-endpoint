@@ -32,7 +32,7 @@ def test_sync_handler_stores_its_own_copy_and_fans_out_to_every_peer():
         backoff_base_seconds=0.01,
         forward_timeout_seconds=1.0,
     )
-    result = FunctionResult(job_id="job1", ok=True, values={"value": 42})
+    result = FunctionResult(job_id="job1", ok=True, output={"value": 42, "type": "json"})
     payload, result_hash = _payload_and_hash(result)
 
     outcome = handler.handle(Command(
@@ -42,7 +42,7 @@ def test_sync_handler_stores_its_own_copy_and_fans_out_to_every_peer():
 
     assert outcome.ok is True
     stored = results.get(StorageKey(id="job1")).unwrap()
-    assert stored.values == {"value": 42}
+    assert stored.output == {"value": 42, "type": "json"}
     assert store.get_state("job1") == "synced"
     assert sorted(fanned_out) == ["tcp://peerB", "tcp://peerC"]
 

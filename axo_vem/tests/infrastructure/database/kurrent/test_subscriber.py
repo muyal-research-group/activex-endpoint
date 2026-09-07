@@ -15,6 +15,7 @@ from axo_vem.infrastructure.database.mongo.bucket_repository import (
     MongoDataItemRepository,
 )
 from axo_vem.infrastructure.database.mongo.checkpoint_store import MongoCheckpointStore
+from axo_vem.infrastructure.database.mongo.choreography_repository import MongoChoreographyRepository
 from axo_vem.infrastructure.database.mongo.consensus_repository import MongoConsensusRepository
 from axo_vem.infrastructure.database.mongo.endpoint_repository import MongoEndpointRepository
 from axo_vem.infrastructure.database.mongo.function_repository import MongoFunctionRepository
@@ -52,6 +53,7 @@ def _subscriber(client=None, **subscriber_kwargs):
         job_repository=MongoJobRepository(db["jobs"]),
         bucket_repository=MongoBucketRepository(db["buckets"]),
         data_item_repository=MongoDataItemRepository(db["bucket_data"]),
+        choreography_repository=MongoChoreographyRepository(db["choreographies"]),
     )
     checkpoints = MongoCheckpointStore(db["projector_checkpoints"])
     subscriber = KurrentSubscriber(

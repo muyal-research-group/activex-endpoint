@@ -115,6 +115,7 @@ class MongoActivityRepository(ActivityRecorder):
         virtual_environment_id: Optional[str] = None,
         function_id: Optional[str] = None,
         function_version: Optional[int] = None,
+        choreography_id: Optional[str] = None,
     ) -> int:
         """Permanently deletes unified_activity rows matching the given
         filter(s) -- used by each entity's hard-delete ("purge") use case
@@ -131,6 +132,8 @@ class MongoActivityRepository(ActivityRecorder):
             query["meta.function_id"] = function_id
         if function_version is not None:
             query["meta.function_version"] = function_version
+        if choreography_id is not None:
+            query["meta.choreography_id"] = choreography_id
         assert query, "purge() requires at least one filter"
         return self._collection.delete_many(query).deleted_count
 

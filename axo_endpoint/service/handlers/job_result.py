@@ -81,7 +81,10 @@ class JobResultHandler(CommandHandler):
                 "job_id": job_id,
                 "status": job_status,
                 "result_ok": result.ok,
-                "values": result.values,
+                "output": result.output,
+                "refs": {k: v.to_str() for k, v in result.refs.items()},
                 "error": result.error,
+                "duration_ms": result.duration_ms,
+                "warnings": result.warnings,
             },
         )

@@ -8,15 +8,28 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional
 
+import cloudpickle
 import zmq
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from axo_endpoint.core.dataio import DataIOError, DataIOTimeoutError, IORef
+from axo_endpoint.core.results import is_json_safe_value
 from axo_endpoint.core.runtime import InvocationContext
 from axo_endpoint.dataio import bind_channel, reset_channel
 from axo_endpoint.runner.job_store import JobStore
+
+
+def _encode_result(value: Any) -> bytes:
+    """JSON-encodes a function's raw return if it's JSON-safe; otherwise
+    cloudpickles it. The receiving endpoint's own build_completion_recorder
+    mirrors this exact fallback (json.loads failing on the payload is what
+    tells it the bytes are a cloudpickled blob, not JSON), so no extra tag
+    is needed on the wire -- the bytes themselves are self-describing."""
+    if is_json_safe_value(value):
+        return json.dumps(value).encode("utf-8")
+    return cloudpickle.dumps(value)
 
 logger = logging.getLogger("axo.runner.server")
 
@@ -140,18 +153,21 @@ class RunnerServer:
             try:
                 params = json.loads(params_b.decode("utf-8"))
                 result = self._fn(params, ctx)
-                payload = json.dumps(result).encode("utf-8")
-                self._store.set_result(job_id, ok=True, value=result)
+                payload = _encode_result(result)
+                output = {"value": result, "type": "json"} if is_json_safe_value(result) else {"type": "bytes"}
+                self._store.set_result(job_id, ok=True, output=output, warnings=ctx.warnings)
                 # No _push_result here: this reply already delivers the result
                 # over the same connection the job arrived on. _push_result's
                 # PUSH channel exists only for the /invoke path below, which
                 # has no such connection to reply on.
-                sock.send_multipart([identity, b"result", job_id_b, b"ok", payload])
+                warnings_payload = json.dumps(ctx.warnings).encode("utf-8")
+                sock.send_multipart([identity, b"result", job_id_b, b"ok", payload, warnings_payload])
             except Exception as exc:
                 error = str(exc)
                 logger.warning("zmq job failed job_id=%s error=%s", job_id, error)
-                self._store.set_result(job_id, ok=False, error=error)
-                sock.send_multipart([identity, b"result", job_id_b, b"err", error.encode()])
+                self._store.set_result(job_id, ok=False, error=error, warnings=ctx.warnings)
+                warnings_payload = json.dumps(ctx.warnings).encode("utf-8")
+                sock.send_multipart([identity, b"result", job_id_b, b"err", error.encode(), warnings_payload])
             finally:
                 reset_channel(token)
 
@@ -209,12 +225,12 @@ class RunnerServer:
                 ctx = InvocationContext(job_id=job_id, scratch_dir=scratch_dir)
                 try:
                     result = fn(body.params, ctx)
-                    store.set_result(job_id, ok=True, value=result)
-                    payload = json.dumps(result).encode("utf-8")
-                    push_result(job_id, "ok", payload)
+                    output = {"value": result, "type": "json"} if is_json_safe_value(result) else {"type": "bytes"}
+                    store.set_result(job_id, ok=True, output=output, warnings=ctx.warnings)
+                    push_result(job_id, "ok", _encode_result(result))
                 except Exception as exc:
                     error = str(exc)
-                    store.set_result(job_id, ok=False, error=error)
+                    store.set_result(job_id, ok=False, error=error, warnings=ctx.warnings)
                     push_result(job_id, "err", error.encode())
 
             threading.Thread(target=_run, daemon=True).start()
@@ -228,7 +244,8 @@ class RunnerServer:
             return {
                 "job_id": entry.job_id,
                 "status": entry.status,
-                "values": entry.values,
+                "output": entry.output,
+                "warnings": entry.warnings,
                 "error": entry.error,
             }
 

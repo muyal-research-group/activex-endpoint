@@ -3,6 +3,12 @@ from __future__ import annotations
 import threading
 import time
 
+from axo_vem.application.choreography.cancel_choreography_run import CancelChoreographyRunUseCase
+from axo_vem.application.choreography.create_choreography import CreateChoreographyUseCase
+from axo_vem.application.choreography.delete_choreography import DeleteChoreographyUseCase
+from axo_vem.application.choreography.purge_choreography import PurgeChoreographyUseCase
+from axo_vem.application.choreography.run_choreography import RunChoreographyUseCase
+from axo_vem.application.choreography.update_choreography import UpdateChoreographyUseCase
 from axo_vem.application.compute.delete_function import DeleteFunctionUseCase
 from axo_vem.application.compute.purge_function_version import PurgeFunctionVersionUseCase
 from axo_vem.application.compute.register_function import RegisterFunctionUseCase
@@ -32,9 +38,12 @@ from axo_vem.infrastructure.database.kurrent.subscriber import KurrentSubscriber
 from axo_vem.infrastructure.database.mongo.activity_repository import MongoActivityRepository
 from axo_vem.infrastructure.database.mongo.activity_retention_worker import ActivityRetentionWorker
 from axo_vem.infrastructure.database.mongo.bucket_repository import (
+    MongoBucketOwnerRepository,
     MongoBucketRepository,
     MongoDataItemRepository,
 )
+from axo_vem.infrastructure.database.mongo.choreography_repository import MongoChoreographyRepository
+from axo_vem.infrastructure.database.mongo.choreography_run_repository import MongoChoreographyRunRepository
 from axo_vem.infrastructure.database.mongo.checkpoint_store import MongoCheckpointStore
 from axo_vem.infrastructure.database.mongo.client import build_mongo_database
 from axo_vem.infrastructure.database.mongo.collections import ReadCollections
@@ -106,6 +115,9 @@ class Server:
         job_repository                 = MongoJobRepository(db["jobs"])
         bucket_repository              = MongoBucketRepository(db["buckets"])
         data_item_repository           = MongoDataItemRepository(db["bucket_data"])
+        bucket_owner_repository        = MongoBucketOwnerRepository(db["bucket_owners"])
+        choreography_repository        = MongoChoreographyRepository(db["choreographies"])
+        choreography_run_repository    = MongoChoreographyRunRepository(db["choreography_runs"])
         checkpoint_store               = MongoCheckpointStore(db["projector_checkpoints"])
 
         self._kurrent_client = build_kurrent_client(config.AXO_VEM_KURRENT_URI)
@@ -149,6 +161,32 @@ class Server:
         )
         purge_endpoint_use_case = PurgeEndpointUseCase(
             db["endpoints"], activity_repository, function_repository, job_repository, appender,
+        )
+        create_choreography_use_case = CreateChoreographyUseCase(appender)
+        update_choreography_use_case = UpdateChoreographyUseCase(
+            choreography_repository, choreography_run_repository, appender,
+        )
+        delete_choreography_use_case = DeleteChoreographyUseCase(
+            choreography_repository, choreography_run_repository, appender,
+        )
+        purge_choreography_use_case = PurgeChoreographyUseCase(
+            db["choreographies"], db["choreography_runs"], activity_repository,
+        )
+        run_choreography_use_case = RunChoreographyUseCase(
+            choreography_repository=choreography_repository,
+            run_repository=choreography_run_repository,
+            function_repository=function_repository,
+            endpoint_repository=endpoint_repository,
+            data_item_repository=data_item_repository,
+            submit_function_job_use_case=submit_function_job_use_case,
+            broadcaster=broadcaster,
+            command_timeout_seconds=config.AXO_VEM_ENDPOINT_COMMAND_TIMEOUT_SECONDS,
+        )
+        cancel_choreography_run_use_case = CancelChoreographyRunUseCase(
+            choreography_repository=choreography_repository,
+            run_repository=choreography_run_repository,
+            run_use_case=run_choreography_use_case,
+            command_timeout_seconds=config.AXO_VEM_ENDPOINT_COMMAND_TIMEOUT_SECONDS,
         )
         container_spawner             = ContainerSpawner()
         launch_endpoint_node_use_case = LaunchEndpointNodeUseCase(
@@ -204,6 +242,7 @@ class Server:
             job_repository                 = job_repository,
             bucket_repository              = bucket_repository,
             data_item_repository           = data_item_repository,
+            choreography_repository        = choreography_repository,
         )
         self._subscriber = KurrentSubscriber(
             client=self._kurrent_client,
@@ -227,6 +266,15 @@ class Server:
             job_repository                        = job_repository,
             bucket_repository                     = bucket_repository,
             data_item_repository                  = data_item_repository,
+            bucket_owner_repository               = bucket_owner_repository,
+            choreography_repository               = choreography_repository,
+            choreography_run_repository           = choreography_run_repository,
+            create_choreography_use_case          = create_choreography_use_case,
+            update_choreography_use_case          = update_choreography_use_case,
+            delete_choreography_use_case          = delete_choreography_use_case,
+            purge_choreography_use_case           = purge_choreography_use_case,
+            run_choreography_use_case             = run_choreography_use_case,
+            cancel_choreography_run_use_case      = cancel_choreography_run_use_case,
             signup_use_case                       = signup_use_case,
             create_profile_use_case               = create_profile_use_case,
             update_profile_use_case               = update_profile_use_case,

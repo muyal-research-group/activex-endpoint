@@ -42,6 +42,21 @@ def test_invocation_context_equality_and_immutability():
         a.scratch_dir = "/other"
 
 
+def test_invocation_context_warn_accumulates_without_mutating_the_frozen_fields():
+    ctx = InvocationContext(job_id="j1", scratch_dir="/tmp/axo_endpoint/scratch/j1")
+    assert ctx.warnings == []
+    ctx.warn("first")
+    ctx.warn("second")
+    assert ctx.warnings == ["first", "second"]
+
+
+def test_invocation_context_warnings_are_not_shared_between_instances():
+    a = InvocationContext(job_id="a", scratch_dir="/tmp/a")
+    b = InvocationContext(job_id="b", scratch_dir="/tmp/b")
+    a.warn("only on a")
+    assert b.warnings == []
+
+
 def test_function_runtime_cannot_be_instantiated_directly():
     with pytest.raises(TypeError):
         FunctionRuntime()
@@ -54,6 +69,9 @@ class _EchoRuntime(FunctionRuntime):
         if "fail" in params:
             return Err(FunctionRuntimeError("boom"))
         return Ok(InvocationHandle(job_id=job_id, function_id=function_ref.id))
+
+    def cancel(self, job_id):
+        return False
 
 
 def test_echo_runtime_accepts_invocation():

@@ -95,6 +95,7 @@ from axo_endpoint.service.handlers import (
     FunctionDeleteHandler,
     FunctionRegisterHandler,
     FunctionUpdateHandler,
+    JobCancelHandler,
     JobForwardHandler,
     JobResultHandler,
     JobResultReplicateHandler,
@@ -291,10 +292,11 @@ class App:
                 self._replicate_result_fn(result)
 
         on_complete = build_completion_recorder(
-            results      = self.results_store,
-            event_bus    = self.event_bus,
-            logger       = self._logger,
-            replicate_fn = _replicate_result,
+            results       = self.results_store,
+            event_bus     = self.event_bus,
+            data_registry = self.data_registry,
+            logger        = self._logger,
+            replicate_fn  = _replicate_result,
         )
         self.process_runtime = ProcessFunctionRuntime(
             function_registry  = self.registry,
@@ -527,6 +529,10 @@ class App:
                 forward_timeout_seconds=config.AXO_ENDPOINT_CONSENSUS_FORWARD_TIMEOUT_SECONDS,
                 logger=self._logger,
             ),
+            # Never leader-proxied -- a job runs on one specific endpoint,
+            # only that endpoint's own runtime state can act on it (same
+            # category as DATA_CHUNK_PUT/DATA_STATUS below).
+            wire.JOB_CANCEL: JobCancelHandler(runtime=self.runtime, logger=self._logger),
             # Never leader-proxied -- the receiving node (leader, being pushed
             # to by a real client, or a follower, being pushed to by the
             # leader's replication loop) IS the intended receiver either way.

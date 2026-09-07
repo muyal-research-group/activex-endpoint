@@ -10,3 +10,5 @@ log/*.[json,csv]
 CLAUDE.md
 plans/
 .vscode/
+htmlcov/
+.coverage

@@ -572,3 +572,76 @@ class EndpointVirtualEnvironmentDetached(EventEnvelope):
 class VirtualEnvironmentLeaderChanged(EventEnvelope):
     virtual_environment_id: str
     leader_endpoint_id: str
+
+
+# ── Choreography (function/bucket workflow graphs) ──────────────────────────
+# Persistence-only -- a Choreography's *run* telemetry is pushed live over a
+# WS channel, not event-sourced, so there are no run-lifecycle events here.
+CHOREOGRAPHY_CREATED = "ChoreographyCreated"
+CHOREOGRAPHY_UPDATED = "ChoreographyUpdated"
+CHOREOGRAPHY_DELETED = "ChoreographyDeleted"
+
+
+class ChoreographyNode(BaseModel):
+    """One node on the design canvas: a registered function invocation or a
+    bucket reference. kind-specific fields are optional and only meaningful
+    for the matching kind (same "one shape, optional extra fields" approach
+    IORef uses for its chunk-aware ops)."""
+
+    model_config = {"frozen": True}
+
+    node_id: str
+    kind: Literal["function", "bucket"]
+    position: Dict[str, float]  # {"x": ..., "y": ...} -- vue-flow layout only, not semantic
+    # kind == "function"
+    function_id: Optional[str] = None
+    function_version: Optional[int] = None
+    max_retries: int = 3
+    retry_policy: Literal["constant", "exponential_backoff", "jitter"] = "constant"
+    # kind == "bucket"
+    bucket_name: Optional[str] = None
+    # Items chosen at design time to feed a bucket_to_fn edge, e.g.
+    # [{"name": "...", "version": 1}, ...]; empty/omitted means "all items".
+    selected_items: Optional[List[Dict[str, Any]]] = None
+
+
+class ChoreographyEdge(BaseModel):
+    """One connection between two nodes. kind is stored explicitly (derived
+    once at design time from the pair of node kinds it joins) so the
+    orchestrator never has to re-derive it by joining back to the node list."""
+
+    model_config = {"frozen": True}
+
+    edge_id: str
+    source_node_id: str
+    target_node_id: str
+    kind: Literal["fn_to_fn", "fn_to_bucket", "bucket_to_fn"]
+    # kind == "fn_to_fn": which of target's declared params receives source's whole result.
+    target_param: Optional[str] = None
+    # kind == "bucket_to_fn": how many bucket items to process concurrently,
+    # hard-capped at the target function's max_concurrency at validation/run time.
+    parallelism: int = 1
+
+
+class ChoreographyGraph(BaseModel):
+    model_config = {"frozen": True}
+
+    nodes: List[ChoreographyNode] = Field(default_factory=list)
+    edges: List[ChoreographyEdge] = Field(default_factory=list)
+
+
+class ChoreographyCreated(EventEnvelope):
+    choreography_id: str
+    name: str
+    owner_user_id: str
+    graph: ChoreographyGraph
+
+
+class ChoreographyUpdated(EventEnvelope):
+    choreography_id: str
+    name: str
+    graph: ChoreographyGraph
+
+
+class ChoreographyDeleted(EventEnvelope):
+    choreography_id: str

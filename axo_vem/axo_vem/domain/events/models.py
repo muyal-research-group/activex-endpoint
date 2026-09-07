@@ -118,6 +118,16 @@ from axo_shared.events.models import (
     EndpointVirtualEnvironmentAssigned,
     EndpointVirtualEnvironmentDetached,
     VirtualEnvironmentLeaderChanged,
+    # Choreography (function/bucket workflow graphs)
+    CHOREOGRAPHY_CREATED,
+    CHOREOGRAPHY_UPDATED,
+    CHOREOGRAPHY_DELETED,
+    ChoreographyNode,
+    ChoreographyEdge,
+    ChoreographyGraph,
+    ChoreographyCreated,
+    ChoreographyUpdated,
+    ChoreographyDeleted,
 )
 
 __all__ = [
@@ -223,4 +233,13 @@ __all__ = [
     "EndpointVirtualEnvironmentAssigned",
     "EndpointVirtualEnvironmentDetached",
     "VirtualEnvironmentLeaderChanged",
+    "CHOREOGRAPHY_CREATED",
+    "CHOREOGRAPHY_UPDATED",
+    "CHOREOGRAPHY_DELETED",
+    "ChoreographyNode",
+    "ChoreographyEdge",
+    "ChoreographyGraph",
+    "ChoreographyCreated",
+    "ChoreographyUpdated",
+    "ChoreographyDeleted",
 ]

@@ -7,7 +7,7 @@ from pymongo.collection import Collection
 
 from axo_vem.domain.data.bucket import DataBucket
 from axo_vem.domain.data.data_item import DataItem
-from axo_vem.domain.data.repository import BucketRepository, DataItemRepository
+from axo_vem.domain.data.repository import BucketOwnerRepository, BucketRepository, DataItemRepository
 
 
 class MongoBucketRepository(BucketRepository):
@@ -35,6 +35,28 @@ class MongoBucketRepository(BucketRepository):
     def save(self, bucket: DataBucket) -> None:
         data = {"name": bucket.name, "quota_bytes": bucket.quota_bytes, "created_at": bucket.created_at}
         self._collection.update_one({"_id": bucket.name}, {"$set": data}, upsert=True)
+
+
+class MongoBucketOwnerRepository(BucketOwnerRepository):
+    """Read/write access to the `bucket_owners` collection, keyed by bucket
+    name -- a plain, directly-written mapping, not fed by the projector
+    (see BucketOwnerRepository's docstring for why this stays separate from
+    `buckets`)."""
+
+    def __init__(self, collection: Collection) -> None:
+        self._collection = collection
+
+    def get_owner(self, name: str) -> Optional[str]:
+        doc = self._collection.find_one({"_id": name})
+        return doc["owner_user_id"] if doc else None
+
+    def set_owner(self, name: str, owner_user_id: str) -> None:
+        self._collection.update_one(
+            {"_id": name}, {"$set": {"owner_user_id": owner_user_id}}, upsert=True,
+        )
+
+    def list_owned(self, owner_user_id: str) -> List[str]:
+        return [doc["_id"] for doc in self._collection.find({"owner_user_id": owner_user_id})]
 
 
 class MongoDataItemRepository(DataItemRepository):

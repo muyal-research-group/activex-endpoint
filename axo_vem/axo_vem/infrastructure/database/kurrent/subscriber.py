@@ -29,7 +29,7 @@ _Logger = Union[Log, DumbLogger]
 # these as real prefixes instead, sidestepping that footgun entirely.
 _STREAM_NAME_PREFIXES = [
     "endpoints-", "functions-", "consensus-", "activity-",
-    "user-profiles-", "virtual-environments-", "buckets-",
+    "user-profiles-", "virtual-environments-", "buckets-", "choreographies-",
 ]
 
 OnEvent = Callable[[str, Dict[str, Any]], None]

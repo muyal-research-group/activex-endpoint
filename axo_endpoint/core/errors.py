@@ -87,6 +87,15 @@ class JobTimeoutError(AxoError):
     name = "JOB_TIMEOUT"
 
 
+class JobCancelledError(AxoError):
+    """A JOB_CANCEL command deliberately stopped this job -- unlike
+    WorkerCrashedError/ContainerCrashError/JobTimeoutError, this outcome was
+    requested, not detected, so it must never trigger a retry."""
+
+    code = 3008
+    name = "JOB_CANCELLED"
+
+
 # ── 4xxx: infrastructure ──────────────────────────────────────────────────────
 
 class QueueFullError(AxoError):

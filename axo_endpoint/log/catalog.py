@@ -42,6 +42,7 @@ class Component:
     HANDLER_JOB_RESULT_SYNC          = "handler.job_result_sync"
     HANDLER_CONSISTENCY_CHECK_REQUEST = "handler.consistency_check_request"
     RESULT_CONSISTENCY               = "result_consistency"
+    HANDLER_JOB_CANCEL               = "handler.job_cancel"
 
 
 class Event:
@@ -83,6 +84,7 @@ class Event:
         WORKER_REAPED  = "RUNTIME.WORKER_REAPED"
         WORKER_CRASHED = "RUNTIME.WORKER_CRASHED"
         WORKER_JOB_TIMEOUT = "RUNTIME.WORKER_JOB_TIMEOUT"
+        WORKER_CANCELLED = "RUNTIME.WORKER_CANCELLED"
 
     class Job:
         SUBMITTED    = "JOB.SUBMITTED"
@@ -91,6 +93,7 @@ class Event:
         RESULT_POLLED = "JOB.RESULT_POLLED"
         RETRY_SCHEDULED = "JOB.RETRY_SCHEDULED"
         RETRY_EXHAUSTED = "JOB.RETRY_EXHAUSTED"
+        CANCEL_REQUESTED = "JOB.CANCEL_REQUESTED"
 
     class Function:
         REGISTERED = "FUNCTION.REGISTERED"
@@ -149,6 +152,7 @@ class Event:
         DISMISSED           = "CONTAINER.DISMISSED"
         CRASHED             = "CONTAINER.CRASHED"
         JOB_TIMEOUT         = "CONTAINER.JOB_TIMEOUT"
+        JOB_CANCELLED       = "CONTAINER.JOB_CANCELLED"
         BOOTSTRAP_REQUESTED = "CONTAINER.BOOTSTRAP_REQUESTED"
         BOOTSTRAP_COMPLETE  = "CONTAINER.BOOTSTRAP_COMPLETE"
         JOB_DISPATCHED      = "CONTAINER.JOB_DISPATCHED"
