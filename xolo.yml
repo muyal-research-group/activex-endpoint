@@ -1,0 +1,88 @@
+services:
+
+  # ── Xolo ──────────────────────────────────────────────────────────────────
+
+  xolo-db:
+    image: mongo:${XOLO_MONGO_IMAGE_TAG:-8-noble}
+    container_name: ${XOLO_MONGO_CONTAINER_NAME:-xolo-mongodb}
+    restart: unless-stopped
+    env_file:
+      - ${XOLO_MONGO_ENV_FILE:-./deploy/env/mongodb.env}
+    ports:
+      - "${XOLO_MONGODB_PUBLIC_PORT:-27018}:27017"
+    volumes:
+      - ${XOLO_MONGO_VOLUME_NAME:-xolo-mongodb-data}:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - axo-net
+
+  xolo-cache:
+    image: redis:${XOLO_REDIS_IMAGE_TAG:-7.0.11-alpine}
+    container_name: ${XOLO_REDIS_CONTAINER_NAME:-xolo-redis}
+    restart: unless-stopped
+    env_file:
+      - ${XOLO_REDIS_ENV_FILE:-./deploy/env/redis.env}
+    ports:
+      - "${XOLO_REDIS_PUBLIC_PORT:-6379}:6379"
+    volumes:
+      - ${XOLO_REDIS_VOLUME_NAME:-xolo-redis-data}:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - axo-net
+
+  xolo:
+    image: ${XOLO_IMAGE:-xolo-api:latest}
+    container_name: ${XOLO_API_CONTAINER_NAME:-xolo-api}
+    restart: unless-stopped
+    env_file:
+      - ${XOLO_APP_ENV_FILE:-./deploy/env/app.prod.env}
+    ports:
+      - "${XOLO_API_PUBLIC_PORT:-10000}:${XOLO_PORT:-10000}"
+    volumes:
+      - ${XOLO_DATA_VOLUME_NAME:-xolo-data}:/xolo
+      - ${XOLO_LOG_VOLUME_NAME:-xolo-logs}:/app/log
+    command: >
+      uvicorn xoloapi.server:app
+      --host ${XOLO_HOST:-0.0.0.0}
+      --port ${XOLO_PORT:-10000}
+      --proxy-headers
+      --forwarded-allow-ips=*
+      --log-level ${XOLO_UVICORN_LOG_LEVEL:-info}
+    depends_on:
+      xolo-db:
+        condition: service_healthy
+      xolo-cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:${XOLO_PORT:-10000}/openapi.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - axo-net
+
+
+networks:
+  axo-net:
+    name: ${AXO_NETWORK_NAME:-axo-net}
+    driver: bridge
+    external: true
+
+volumes:
+  xolo-mongodb-data:
+    name: ${XOLO_MONGO_VOLUME_NAME:-xolo-mongodb-data}
+  xolo-redis-data:
+    name: ${XOLO_REDIS_VOLUME_NAME:-xolo-redis-data}
+  xolo-data:
+    name: ${XOLO_DATA_VOLUME_NAME:-xolo-data}
+  xolo-logs:
+    name: ${XOLO_LOG_VOLUME_NAME:-xolo-logs}

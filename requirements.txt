@@ -18,6 +18,7 @@ pyzmq==26.0.3
 pandas
 poetry
 --extra-index-url https://test.pypi.org/simple/
-mictlanx==0.0.150
-xolo==0.0.7
-activex==0.0.16
+# mictlanx==0.0.156
+mictlanx==0.0.161a39
+xolo==0.0.9a4
+# activex==0.0.21

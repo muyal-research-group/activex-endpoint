@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "axo_vem"
+version = "0.1.0"
+description = "Cluster management API for axo_endpoint nodes -- ingests events over ZMQ, stores them in Kurrent, and exposes a MongoDB-backed read model over HTTP"
+authors = ["Ignacio Castillo <ignacio.bcastillo@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4"
+fastapi = "^0.115.0"
+uvicorn = {version = "^0.34.0", extras = ["standard"]}
+pyzmq = "^26.0.3"
+pymongo = "^4.8"
+kurrentdbclient = ">=1.0"
+option = ">=2.1.0,<3.0.0"
+python-dotenv = "^1.0.1"
+rich = "^15.0.0"
+docker = "^7.1.0"
+python-multipart = "^0.0.20"
+axo_shared = {path = "../axo_shared", develop = true}
+xolo = {version = "0.1.0a4", source = "test"}
+
+[tool.poetry.scripts]
+axo-vem = "axo_vem.cli:main"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+mongomock = "^4.1"
+httpx = "^0.27.0"
+pytest-cov = "^7.1.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[[tool.poetry.source]]
+name = "test"
+url = "https://test.pypi.org/simple/"
+priority = "supplemental"
+

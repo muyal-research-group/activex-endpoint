@@ -1,0 +1,233 @@
+# 3-node axo_endpoint mesh, plus axo_vem (+ Kurrent + Mongo) and the
+# xolo stack, sharing one compose network (axo-net) for local/production-shaped
+# testing.
+#
+# Prerequisite (one-time, not created by this file since it's a shared
+# resource with any ad-hoc container-runtime function testing too):
+#   docker network create axo-net
+#
+# Usage:
+#   docker compose up --build
+#   (or: ./deploy.sh up --build, which also passes deploy/env/compose.env as
+#   the --env-file supplying every ${VAR:-default} below)
+#
+# Each node is reachable from the host on its own port range (internal
+# container ports stay the plain .env.prod defaults -- 5555/5556/5557 --
+# since each container has its own isolated network namespace; only the
+# host-side mapping needs to differ per node):
+#   node 0: tcp://localhost:5555 (router) / 5556 (pub) / 5557 (container results)
+#   node 1: tcp://localhost:5565 / 5566 / 5567
+#   node 2: tcp://localhost:5575 / 5576 / 5577
+#
+# Unlike the local host-based 2-node dev setup (.env.dev/.env.dev.1, which
+# needs AXO_ENDPOINT_LOCAL_MODE=true because peer ids aren't resolvable
+# hostnames on one shared host), real compose service names ARE resolvable
+# hostnames on the compose network -- so AXO_ENDPOINT_LOCAL_MODE=false
+# (.env.prod's default) is correct as-is, and AXO_ENDPOINT_ID is simply each
+# service's own compose name.
+
+x-axo-endpoint-common: &axo-endpoint-common
+  build:
+    context: .
+    dockerfile: ${AXO_ENDPOINT_DOCKERFILE:-Dockerfile}
+  image: ${AXO_ENDPOINT_IMAGE:-axo-endpoint:local}
+  networks:
+    - axo-net
+  env_file:
+    - ${AXO_ENDPOINT_ENV_FILE:-.env.prod}
+  restart: unless-stopped
+
+services:
+  # axo-endpoint-0:
+  #   <<: *axo-endpoint-common
+  #   container_name: axo-endpoint-0
+  #   hostname: axo-endpoint-0
+  #   environment:
+  #     AXO_ENDPOINT_ID: axo-endpoint-0
+  #     AXO_ENDPOINT_SUB_CONNECT: tcp://axo-endpoint-1:5556,tcp://axo-endpoint-2:5556
+  #     AXO_ENDPOINT_API_URI: tcp://axo-vem:6000
+  #   ports:
+  #     - "5555:5555"
+  #     - "5556:5556"
+  #     - "5557:5557"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # axo-endpoint-1:
+  #   <<: *axo-endpoint-common
+  #   container_name: axo-endpoint-1
+  #   hostname: axo-endpoint-1
+  #   environment:
+  #     AXO_ENDPOINT_ID: axo-endpoint-1
+  #     AXO_ENDPOINT_SUB_CONNECT: tcp://axo-endpoint-0:5556,tcp://axo-endpoint-2:5556
+  #     AXO_ENDPOINT_API_URI: tcp://axo-vem:6000
+  #   ports:
+  #     - "5565:5555"
+  #     - "5566:5556"
+  #     - "5567:5557"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  # axo-endpoint-2:
+  #   <<: *axo-endpoint-common
+  #   container_name: axo-endpoint-2
+  #   hostname: axo-endpoint-2
+  #   environment:
+  #     AXO_ENDPOINT_ID: axo-endpoint-2
+  #     AXO_ENDPOINT_SUB_CONNECT: tcp://axo-endpoint-0:5556,tcp://axo-endpoint-1:5556
+  #     AXO_ENDPOINT_API_URI: tcp://axo-vem:6000
+  #   ports:
+  #     - "5575:5555"
+  #     - "5576:5556"
+  #     - "5577:5577"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  kurrentdb:
+    image: eventstore/eventstore:${AXO_KURRENTDB_IMAGE_TAG:-24.10.0-jammy}
+    container_name: ${AXO_KURRENTDB_CONTAINER_NAME:-axo-kurrentdb}
+    hostname: kurrentdb
+    restart: unless-stopped
+    env_file:
+      - ${AXO_KURRENTDB_ENV_FILE:-./deploy/env/axo.kurrentdb.prod.env}
+    volumes:
+      - ${AXO_KURRENTDB_VOLUME_NAME:-axo-kurrentdb-data}:/var/lib/eventstore
+    ports:
+      - "${AXO_KURRENTDB_PUBLIC_PORT:-2113}:2113"
+      - "${AXO_KURRENTDB_TCP_PORT:-1113}:1113"
+    networks:
+      - axo-net
+    command: ["--insecure", "--ext-ip", "0.0.0.0"]
+    # No host port published -- only axo-vem talks to this.
+
+  axo-vem-mongo:
+    image: mongo:${AXO_VEM_MONGO_IMAGE_TAG:-7}
+    container_name: ${AXO_VEM_MONGO_CONTAINER_NAME:-axo-vem-mongo}
+    hostname: axo-vem-mongo
+    restart: unless-stopped
+    env_file:
+      - ${AXO_VEM_MONGO_ENV_FILE:-./deploy/env/axo.vem.mongodb.env}
+    volumes:
+      - ${AXO_VEM_MONGO_VOLUME_NAME:-axo-vem-mongo-data}:/data/db
+    ports:
+      - "${AXO_VEM_MONGO_PUBLIC_PORT:-27019}:27017"
+    networks:
+      - axo-net
+    # No host port published -- only axo-vem talks to this. This
+    # is a dedicated instance for axo_vem's own read model, kept
+    # separate from the unrelated xolo-db service above.
+
+  axo-vem:
+    build:
+      context: .
+      dockerfile: axo_vem/Dockerfile
+    image: ${AXO_VEM_IMAGE:-axo-vem:local}
+    container_name: ${AXO_VEM_CONTAINER_NAME:-axo-vem}
+    hostname: axo-vem
+    restart: unless-stopped
+    env_file:
+      - ${AXO_VEM_ENV_FILE:-./deploy/env/axo.vem.prod.env}
+    ports:
+      - "${AXO_VEM_PUBLIC_PORT:-8080}:8080"   # HTTP only -- the ZMQ ingestion port (6000) stays internal to axo-net
+    depends_on:
+      - kurrentdb
+      - axo-vem-mongo
+    networks:
+      - axo-net
+    volumes:
+      # Lets POST /endpoints launch new axo_endpoint node containers via the
+      # shared axo_shared.container.ContainerSpawner (see
+      # application/nodes/launch_endpoint_node.py). KNOWN LIMITATION: a
+      # newly-launched node only connects to whatever peer_addresses the
+      # caller supplies -- this does not reconfigure any already-running
+      # node's own AXO_ENDPOINT_SUB_CONNECT to include the new node back,
+      # so full bidirectional mesh membership after a dynamic launch is a
+      # manual (or future) follow-up step, not handled here.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  xolo-db:
+    image: mongo:${XOLO_MONGO_IMAGE_TAG:-8-noble}
+    container_name: ${XOLO_MONGO_CONTAINER_NAME:-xolo-mongodb}
+    restart: unless-stopped
+    env_file:
+      - ${XOLO_MONGO_ENV_FILE:-./deploy/env/mongodb.env}
+    ports:
+      - "${XOLO_MONGODB_PUBLIC_PORT:-27018}:27017"
+    volumes:
+      - ${XOLO_MONGO_VOLUME_NAME:-xolo-mongodb-data}:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - axo-net
+
+  xolo-cache:
+    image: redis:${XOLO_REDIS_IMAGE_TAG:-7.0.11-alpine}
+    container_name: ${XOLO_REDIS_CONTAINER_NAME:-xolo-redis}
+    restart: unless-stopped
+    env_file:
+      - ${XOLO_REDIS_ENV_FILE:-./deploy/env/redis.env}
+    ports:
+      - "${XOLO_REDIS_PUBLIC_PORT:-6379}:6379"
+    volumes:
+      - ${XOLO_REDIS_VOLUME_NAME:-xolo-redis-data}:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - axo-net
+
+  xolo:
+    image: ${XOLO_IMAGE:-xolo-api:latest}
+    container_name: ${XOLO_API_CONTAINER_NAME:-xolo-api}
+    restart: unless-stopped
+    env_file:
+      - ${XOLO_APP_ENV_FILE:-./deploy/env/app.prod.env}
+    ports:
+      - "${XOLO_API_PUBLIC_PORT:-10000}:${XOLO_PORT:-10000}"
+    volumes:
+      - ${XOLO_DATA_VOLUME_NAME:-xolo-data}:/xolo
+      - ${XOLO_LOG_VOLUME_NAME:-xolo-logs}:/app/log
+    command: >
+      uvicorn xoloapi.server:app
+      --host ${XOLO_HOST:-0.0.0.0}
+      --port ${XOLO_PORT:-10000}
+      --proxy-headers
+      --forwarded-allow-ips=*
+      --log-level ${XOLO_UVICORN_LOG_LEVEL:-info}
+    depends_on:
+      xolo-db:
+        condition: service_healthy
+      xolo-cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:${XOLO_PORT:-10000}/openapi.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - axo-net
+
+
+networks:
+  axo-net:
+    name: ${AXO_NETWORK_NAME:-axo-net}
+    external: true
+
+volumes:
+  axo-kurrentdb-data:
+    name: ${AXO_KURRENTDB_VOLUME_NAME:-axo-kurrentdb-data}
+  axo-vem-mongo-data:
+    name: ${AXO_VEM_MONGO_VOLUME_NAME:-axo-vem-mongo-data}
+  xolo-mongodb-data:
+    name: ${XOLO_MONGO_VOLUME_NAME:-xolo-mongodb-data}
+  xolo-redis-data:
+    name: ${XOLO_REDIS_VOLUME_NAME:-xolo-redis-data}
+  xolo-logs:
+    name: ${XOLO_LOG_VOLUME_NAME:-xolo-logs}
+  xolo-data:
+    name: ${XOLO_DATA_VOLUME_NAME:-xolo-data}

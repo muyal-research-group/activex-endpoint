@@ -1,0 +1,24 @@
+{
+  "name": "axo-ui",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@guolao/vue-monaco-editor": "^1.6.0",
+    "@mdi/font": "^7.4.47",
+    "@pinia/nuxt": "^0.11.3",
+    "@vue-flow/core": "^1.48.2",
+    "nuxt": "^4.4.8",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.39",
+    "vue-router": "^5.1.0",
+    "vuetify": "^4.1.4",
+    "vuetify-nuxt-module": "^1.0.0-rc.2"
+  }
+}

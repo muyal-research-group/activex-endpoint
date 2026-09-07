@@ -1,0 +1,72 @@
+name: CI
+on:
+  pull_request: {}
+  workflow_dispatch: {}
+env:
+  POETRY_VERSION: "2.1.3"
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  test-axo-shared:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Poetry
+        run: pipx install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Install dependencies
+        working-directory: axo_shared
+        run: poetry install
+      - name: Run tests with coverage
+        working-directory: axo_shared
+        run: poetry run pytest -q --cov=axo_shared --cov-report=term-missing --cov-report=html
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-axo-shared
+          path: axo_shared/htmlcov
+
+  test-axo-endpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Poetry
+        run: pipx install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Install dependencies
+        run: poetry install --extras pandas
+      - name: Run tests with coverage
+        run: poetry run pytest -q --cov=axo_endpoint --cov-report=term-missing --cov-report=html
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-axo-endpoint
+          path: htmlcov
+
+  test-axo-vem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Poetry
+        run: pipx install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Install dependencies
+        working-directory: axo_vem
+        run: poetry install
+      - name: Run tests with coverage
+        working-directory: axo_vem
+        run: poetry run pytest -q --cov=axo_vem --cov-report=term-missing --cov-report=html
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-axo-vem
+          path: axo_vem/htmlcov

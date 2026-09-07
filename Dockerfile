@@ -1,5 +1,5 @@
 # 
-FROM python:3.9
+FROM python:3.10
 
 # 
 WORKDIR /app
@@ -12,15 +12,16 @@ ENV POETRY_NO_INTERACTION=1 \
 
 COPY poetry.lock  .
 COPY pyproject.toml  .
+COPY axo_shared/ /app/axo_shared/
 RUN touch README.md
 
 RUN poetry config virtualenvs.create false && \
     poetry lock && \
     poetry install --no-root
 
-COPY ./activexendpoint/ /app/activexendpoint
+COPY ./axo_endpoint/ /app/axo_endpoint
 RUN poetry install
 # COPY ./activex.tar.gz .
 # RUN poetry remove activex && poetry add /app/activex.tar.gz
 # CMD ["sleep","infinity"]
-ENTRYPOINT [ "poetry", "run", "python3", "-m", "activexendpoint.main" ]
+ENTRYPOINT [ "poetry", "run", "python3", "-m", "axo_endpoint.main" ]
